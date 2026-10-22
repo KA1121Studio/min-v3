@@ -62,7 +62,7 @@ app.post('/api/signup', async (req, res) => {
   const { username, password, avatarColor = 0 } = req.body || {};
   if (!username || username.length > 24)
     return res.status(400).json({ error: 'ユーザー名は1〜24文字です' });
-  if (!password || password.length < 4)
+  if (!password || password.length < 6)
     return res.status(400).json({ error: 'パスワードは6文字以上です' });
 
   const email = `${username.toLowerCase()}@min3.local`;
@@ -75,14 +75,12 @@ app.post('/api/signup', async (req, res) => {
   });
 
   if (error) {
-    // ★ ここを追加：Supabaseの生エラーをRenderのログに出力
     console.error('[signup] supabase error:', {
       message: error.message,
       status: error.status,
       code: error.code,
       name: error.name,
     });
-
     const msg = /already/i.test(error.message)
       ? 'このユーザー名は既に使われています'
       : 'アカウント作成に失敗しました';
@@ -92,7 +90,7 @@ app.post('/api/signup', async (req, res) => {
   const token = signToken({ id: data.user.id, username });
   return res.json({
     token,
-    user: { id: data.user.id, username, avatarColor, isAdmin: false 
+    user: { id: data.user.id, username, avatarColor, isAdmin: false },
   });
 });
 
