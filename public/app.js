@@ -61,6 +61,8 @@
     loginBtn: $('loginBtn'),
     toAdminLogin: $('toAdminLogin'),
 
+    sidebarToggle: $('sidebarToggle'),
+
     signupName: $('signupName'),
     signupPass: $('signupPass'),
     signupPass2: $('signupPass2'),
@@ -824,7 +826,25 @@
     showToast('ルームを退出しました');
   });
 
-  el.backBtn.addEventListener('click', openSidebar);
+  /* サイドバー開閉（PC・モバイル共通） */
+el.sidebarToggle.addEventListener('click', () => {
+  if(window.innerWidth <= 820){
+    // モバイル：オーバーレイ表示のトグル
+    el.sidebar.classList.toggle('open');
+    el.scrim.classList.toggle('show');
+  } else {
+    // PC：幅を畳む
+    el.sidebar.classList.toggle('collapsed');
+  }
+});
+
+/* 既存の backBtn は削除（sidebarToggle に統合） */
+// el.backBtn.addEventListener('click', openSidebar); ← 削除
+
+el.scrim.addEventListener('click', () => {
+  el.sidebar.classList.remove('open');
+  el.scrim.classList.remove('show');
+});
   el.scrim.addEventListener('click', closeSidebar);
 
   el.openAdmin.addEventListener('click', openAdminLogin);
