@@ -456,6 +456,24 @@ app.get('/api/rooms/:id/members', authRequired, async (req, res) => {
     .maybeSingle();
   if (!room) return res.status(404).json({ error: 'ルームが見つかりません' });
 
+  // 全体チャットは全ユーザーをメンバーとして返す
+  if (room.type === 'global') {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, username, avatar_color, created_at')
+      .order('created_at', { ascending: true });
+    if (error) return res.status(500).json({ error: 'メンバー取得に失敗しました' });
+    return res.json({
+      members: (data || []).map((u) => ({
+        userId: u.id,
+        name: u.username,
+        avatarColor: u.avatar_color ?? 0,
+        joinedAt: u.created_at,
+        isMe: u.id === req.user.sub,
+      })),
+    });
+  }
+
   // privateはメンバーのみ閲覧可
   if (room.type === 'private') {
     const { data: m } = await supabase
