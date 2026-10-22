@@ -116,6 +116,9 @@
     clearAll: $('clearAll'),
 
     toast: $('toast'),
+    leaveModal: $('leaveModal'),
+    leaveModalDesc: $('leaveModalDesc'),
+    leaveConfirmBtn: $('leaveConfirmBtn'),
   };
 
   let selectedAvatar = 0;
@@ -832,15 +835,20 @@ function toggleDetails(force){
 
   el.toggleDetails.addEventListener('click', () => toggleDetails());
   el.closeDetails.addEventListener('click', () => toggleDetails(false));
-el.leaveRoom.addEventListener('click', async () => {
+el.leaveRoom.addEventListener('click', () => {
   const r = activeRoom();
   if(!r || r.type === 'global'){ showToast('全体チャットは退出できません'); return; }
+  el.leaveModalDesc.textContent = `「${r.name}」を退出しますか？`;
+  openModal('leaveModal');
+});
 
-  if(!confirm(`「${r.name}」を退出しますか？`)) return;
+el.leaveConfirmBtn.addEventListener('click', async () => {
+  const r = activeRoom();
+  if(!r) return;
+  closeModal('leaveModal');
 
   try {
     const result = await api(`/api/rooms/${r.id}/members/me`, { method: 'DELETE' });
-    // ローカル状態から除去
     state.rooms = state.rooms.filter(x => x.id !== r.id);
     state.activeRoomId = state.rooms[0]?.id || null;
     if(state.activeRoomId) openRoom(state.activeRoomId);
