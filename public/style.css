@@ -167,8 +167,72 @@
     background:var(--panel-2);border-right:1px solid var(--border);
     transition:transform .3s var(--ease);
   }
-  .sidebar-head{padding:18px 16px 12px;display:flex;align-items:center;gap:12px}
-  .sidebar-head .me{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
+/* ============ サイドバー ============ */
+.sidebar{
+  width:340px;display:flex;flex-direction:column;min-height:0;
+  background:var(--panel-2);border-right:1px solid var(--border);
+  transition:transform .3s var(--ease), width .3s var(--ease);
+  position:relative;
+}
+
+/* 上部ブランド */
+.sidebar-brand{
+  display:flex;align-items:center;gap:10px;
+  padding:16px 16px 12px;
+  border-bottom:1px solid var(--border);
+}
+.logo-sm{width:34px;height:34px;border-radius:11px}
+.brand-title-sm{font-size:16px;font-weight:800;letter-spacing:.3px}
+
+/* 下部ユーザー情報 */
+.sidebar-foot{
+  display:flex;align-items:center;gap:8px;
+  padding:12px 14px;
+  border-top:1px solid var(--border);
+  background:linear-gradient(180deg, rgba(20,24,48,.4), rgba(20,24,48,.8));
+}
+.sidebar-foot .me{
+  display:flex;align-items:center;gap:10px;flex:1;min-width:0;
+}
+.sidebar-foot .me-name{
+  font-weight:700;font-size:14px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.sidebar-foot .me-status{
+  font-size:11px;color:var(--accent-3);
+  display:flex;align-items:center;gap:5px;
+}
+.sidebar-foot .me-status .dot{
+  width:7px;height:7px;border-radius:50%;background:var(--accent-3);
+}
+
+/* 開閉ボタン（チャットヘッダー左） */
+.sidebar-toggle{
+  width:40px;height:40px;border-radius:12px;
+  display:flex;align-items:center;justify-content:center;
+  border:1px solid transparent;color:var(--muted);
+  transition:background .2s,color .2s,border-color .2s;
+}
+.sidebar-toggle:hover{
+  background:rgba(255,255,255,.05);color:var(--text);border-color:var(--border);
+}
+
+/* サイドバーが閉じた状態 */
+.sidebar.collapsed{
+  width:0;overflow:hidden;border-right:0;
+}
+.sidebar.collapsed > *{opacity:0;pointer-events:none}
+
+/* ルーム情報パネル（既存のまま、PC幅でもトグル可能に） */
+.details{
+  width:300px;border-left:1px solid var(--border);background:var(--panel-2);
+  display:flex;flex-direction:column;overflow-y:auto;
+  transition:transform .3s var(--ease), width .3s var(--ease);
+}
+.details.collapsed{
+  width:0;overflow:hidden;border-left:0;
+}
+.details.collapsed > *{opacity:0;pointer-events:none}
   .me-name{font-weight:700;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .me-status{font-size:11px;color:var(--accent-3);display:flex;align-items:center;gap:5px}
   .me-status .dot{width:7px;height:7px;border-radius:50%;background:var(--accent-3)}
@@ -393,14 +457,13 @@
     .details{position:fixed;right:0;top:0;bottom:0;z-index:20;transform:translateX(100%);box-shadow:var(--shadow-lg)}
     .details.open{transform:none}
   }
-  @media (max-width:820px){
-    .sidebar{position:fixed;left:0;top:0;bottom:0;z-index:20;width:min(340px,86vw);
-      transform:translateX(-100%);box-shadow:var(--shadow-lg)}
-    .sidebar.open{transform:none}
-    .back-btn{display:flex}
-    .msg{max-width:88%}
-    .messages{padding:16px 12px 8px}
-  }
+@media (max-width:820px){
+  .sidebar{position:fixed;left:0;top:0;bottom:0;z-index:20;width:min(340px,86vw);
+    transform:translateX(-100%);box-shadow:var(--shadow-lg)}
+  .sidebar.open{transform:none}
+  .msg{max-width:88%}
+  .messages{padding:16px 12px 8px}
+}
   .scrim{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:15;display:none}
   .scrim.show{display:block}
   .hidden{display:none !important}
