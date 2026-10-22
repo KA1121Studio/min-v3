@@ -270,3 +270,5 @@ create policy "reactions_insert"
 create policy "reactions_delete"
   on public.reactions for delete
   using (auth.uid() = user_id);
+
+alter publication supabase_realtime add table public.reactions;
