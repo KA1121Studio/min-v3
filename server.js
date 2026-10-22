@@ -57,7 +57,7 @@ app.post('/api/signup', async (req, res) => {
   if (!username || username.length > 24)
     return res.status(400).json({ error: 'ユーザー名は1〜24文字です' });
   if (!password || password.length < 4)
-    return res.status(400).json({ error: 'パスワードは4文字以上です' });
+    return res.status(400).json({ error: 'パスワードは6文字以上です' });
 
   const email = `${username.toLowerCase()}@min3.local`;
 
