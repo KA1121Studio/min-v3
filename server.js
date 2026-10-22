@@ -41,9 +41,15 @@ function authRequired(req, res, next) {
   }
 }
 
+function adminRequired(req, res, next) {
+  if (!req.user?.isAdmin)
+    return res.status(403).json({ error: '管理者権限が必要です' });
+  next();
+}
+
 const signToken = (user) =>
   jwt.sign(
-    { sub: user.id, username: user.username },
+    { sub: user.id, username: user.username, isAdmin: !!user.isAdmin },
     JWT_SECRET,
     { expiresIn: '7d' }
   );
@@ -86,7 +92,7 @@ app.post('/api/signup', async (req, res) => {
   const token = signToken({ id: data.user.id, username });
   return res.json({
     token,
-    user: { id: data.user.id, username, avatarColor },
+    user: { id: data.user.id, username, avatarColor, isAdmin: false 
   });
 });
 
@@ -101,22 +107,29 @@ app.post('/api/login', async (req, res) => {
 
   const email = `${username.toLowerCase()}@min3.local`;
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-
   if (error || !data.user)
     return res.status(401).json({ error: 'ユーザー名またはパスワードが違います' });
 
-  const meta = data.user.user_metadata || {};
-  const token = signToken({ id: data.user.id, username: meta.username || username });
-  return res.json({
-    token,
-    user: {
-      id: data.user.id,
-      username: meta.username || username,
-      avatarColor: meta.avatar_color ?? 0,
-    },
-  });
-});
+  // profilesからis_admin/is_suspendedを取得
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('username, avatar_color, is_admin, is_suspended')
+    .eq('id', data.user.id)
+    .maybeSingle();
 
+  if (profile?.is_suspended)
+    return res.status(403).json({ error: 'このアカウントは停止されています' });
+
+  const meta = data.user.user_metadata || {};
+  const user = {
+    id: data.user.id,
+    username: profile?.username || meta.username || username,
+    avatarColor: profile?.avatar_color ?? 0,
+    isAdmin: !!profile?.is_admin,
+  };
+  const token = signToken(user);
+  return res.json({ token, user });
+});
 /* =====================================================
    GET /api/rooms
    自分が閲覧可能なルーム一覧 + 最終メッセージ + メンバー数
@@ -318,6 +331,118 @@ app.post('/api/messages', authRequired, async (req, res) => {
   });
 });
 
+/* =====================================================
+   GET /api/admin/stats
+===================================================== */
+app.get('/api/admin/stats', authRequired, adminRequired, async (req, res) => {
+  const [{ count: users }, { count: rooms }, { count: messages }] = await Promise.all([
+    supabase.from('profiles').select('*', { count: 'exact', head: true }),
+    supabase.from('rooms').select('*', { count: 'exact', head: true }),
+    supabase.from('messages').select('*', { count: 'exact', head: true }),
+  ]);
+  return res.json({ users: users || 0, rooms: rooms || 0, messages: messages || 0 });
+});
+
+/* =====================================================
+   GET /api/admin/users
+===================================================== */
+app.get('/api/admin/users', authRequired, adminRequired, async (req, res) => {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, username, avatar_color, is_admin, is_suspended, created_at')
+    .order('created_at', { ascending: false });
+  if (error) return res.status(500).json({ error: 'ユーザー取得に失敗しました' });
+  return res.json({ users: data || [] });
+});
+
+/* =====================================================
+   PATCH /api/admin/users/:id  body: { is_suspended?, is_admin? }
+===================================================== */
+app.patch('/api/admin/users/:id', authRequired, adminRequired, async (req, res) => {
+  const id = req.params.id;
+  const patch = {};
+  if (typeof req.body?.is_suspended === 'boolean') patch.is_suspended = req.body.is_suspended;
+  if (typeof req.body?.is_admin === 'boolean') patch.is_admin = req.body.is_admin;
+  if (!Object.keys(patch).length)
+    return res.status(400).json({ error: '更新項目がありません' });
+
+  // 自分自身の管理者剥奪は禁止
+  if (id === req.user.sub && patch.is_admin === false)
+    return res.status(400).json({ error: '自分自身の管理者権限は外せません' });
+
+  const { error } = await supabase.from('profiles').update(patch).eq('id', id);
+  if (error) return res.status(500).json({ error: '更新に失敗しました' });
+  return res.json({ ok: true });
+});
+
+/* =====================================================
+   GET /api/admin/rooms
+===================================================== */
+app.get('/api/admin/rooms', authRequired, adminRequired, async (req, res) => {
+  const { data, error } = await supabase
+    .from('rooms')
+    .select('id, name, type, ico, created_at, created_by')
+    .order('created_at', { ascending: false });
+  if (error) return res.status(500).json({ error: 'ルーム取得に失敗しました' });
+  return res.json({ rooms: data || [] });
+});
+
+/* =====================================================
+   DELETE /api/admin/rooms/:id
+===================================================== */
+app.delete('/api/admin/rooms/:id', authRequired, adminRequired, async (req, res) => {
+  const id = req.params.id;
+  const { data: room } = await supabase
+    .from('rooms').select('id, type').eq('id', id).maybeSingle();
+  if (!room) return res.status(404).json({ error: 'ルームが見つかりません' });
+  if (room.type === 'global')
+    return res.status(400).json({ error: '全体チャットは削除できません' });
+
+  const { error } = await supabase.from('rooms').delete().eq('id', id);
+  if (error) return res.status(500).json({ error: '削除に失敗しました' });
+  return res.json({ ok: true });
+});
+
+/* =====================================================
+   GET /api/admin/reports
+===================================================== */
+app.get('/api/admin/reports', authRequired, adminRequired, async (req, res) => {
+  const { data, error } = await supabase
+    .from('reports')
+    .select(`
+      id, reason, status, created_at,
+      reporter:reporter_id (username),
+      target:target_user (username),
+      message:message_id (content, room_id)
+    `)
+    .order('created_at', { ascending: false });
+  if (error) return res.status(500).json({ error: '通報取得に失敗しました' });
+  return res.json({ reports: data || [] });
+});
+
+/* =====================================================
+   PATCH /api/admin/reports/:id  body: { status }
+===================================================== */
+app.patch('/api/admin/reports/:id', authRequired, adminRequired, async (req, res) => {
+  const id = req.params.id;
+  const status = req.body?.status;
+  if (!['open','resolved','dismissed'].includes(status))
+    return res.status(400).json({ error: '不正なステータスです' });
+  const { error } = await supabase.from('reports').update({ status }).eq('id', id);
+  if (error) return res.status(500).json({ error: '更新に失敗しました' });
+  return res.json({ ok: true });
+});
+
+/* =====================================================
+   DELETE /api/admin/messages
+   全メッセージ削除
+===================================================== */
+app.delete('/api/admin/messages', authRequired, adminRequired, async (req, res) => {
+  // 全体チャットのメッセージも含めてすべて削除
+  const { error } = await supabase.from('messages').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+  if (error) return res.status(500).json({ error: '削除に失敗しました' });
+  return res.json({ ok: true });
+});
              
 /* =====================================================
    GET /api/rooms/:id/members
