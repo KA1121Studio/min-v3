@@ -659,11 +659,15 @@
       el.memberList.appendChild(row);
     }
   }
-  function toggleDetails(force){
-    const open = force !== undefined ? force : !state.detailsOpen;
-    state.detailsOpen = open;
+function toggleDetails(force){
+  const open = force !== undefined ? force : !state.detailsOpen;
+  state.detailsOpen = open;
+  if(window.innerWidth <= 1100){
     el.details.classList.toggle('open', open);
+  } else {
+    el.details.classList.toggle('collapsed', !open);
   }
+}
 
   function openSidebar(){ el.sidebar.classList.add('open'); el.scrim.classList.add('show'); }
   function closeSidebar(){ el.sidebar.classList.remove('open'); el.scrim.classList.remove('show'); }
