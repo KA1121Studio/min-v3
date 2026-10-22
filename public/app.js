@@ -126,7 +126,9 @@
     inviteSendBtn: $('inviteSendBtn'),
     inviteMemberBtn: $('inviteMemberBtn'),
     openInvites: $('openInvites'),
-    inviteBadge: $('inviteBadge'),                                                                                  
+    inviteBadge: $('inviteBadge'),    
+    invitesModal: $('invitesModal'),
+    invitesList: $('invitesList'),
   };
 
   let selectedAvatar = 0;
@@ -471,7 +473,7 @@ el.inviteSendBtn.addEventListener('click', async () => {
         time: timeStr(m.createdAt),
         createdAt: m.createdAt,
         mine: m.mine,
-        reactions: m.reactions || {},,
+        reactions: m.reactions || {},
         readBy: [],
       }));
       renderMessages();
@@ -935,8 +937,7 @@ el.scrim.addEventListener('click', () => {
     showToast('表示中メッセージをクリアしました（デモ）');
   });
 
-                              invitesModal: $('invitesModal'),
-invitesList: $('invitesList'),
+
 
 async function refreshInvites(){
   try {
