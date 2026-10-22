@@ -638,27 +638,41 @@
   /* =====================================================
      詳細パネル
   ===================================================== */
-  function renderDetails(r){
-    el.detailsDesc.textContent = r.desc || '説明はありません。';
+  async function renderDetails(r){
+  if(!r) return;
+  el.detailsDesc.textContent = r.desc || '説明はありません。';
+  el.memberList.innerHTML = '<div style="font-size:12px;color:var(--muted-2)">読み込み中...</div>';
+
+  try {
+    const { members } = await api(`/api/rooms/${r.id}/members`);
     el.memberList.innerHTML = '';
-    // メンバー一覧APIは未実装のため、自分だけ表示（将来 /api/rooms/:id/members を追加）
-    const u = state.me;
-    if(u){
+    if(!members.length){
+      el.memberList.innerHTML = '<div style="font-size:12px;color:var(--muted-2)">メンバーがいません</div>';
+      return;
+    }
+    members.forEach(u => {
       const row = document.createElement('div');
       row.className = 'member-row';
+
       const av = document.createElement('div');
       av.className = 'avatar sm';
-      av.textContent = u.initials;
-      av.style.background = colorOf(u.colorIdx);
+      av.textContent = (u.name || '?').slice(0,2).toUpperCase();
+      av.style.background = colorOf(u.avatarColor);
+
       const nm = document.createElement('div');
       nm.className = 'name';
-      nm.textContent = u.name + '（あなた）';
+      nm.textContent = u.name + (u.isMe ? '（あなた）' : '');
+
       const dot = document.createElement('span');
       dot.className = 'online-dot';
+
       row.append(av, nm, dot);
       el.memberList.appendChild(row);
-    }
+    });
+  } catch (e) {
+    el.memberList.innerHTML = `<div style="font-size:12px;color:var(--danger)">${e.message}</div>`;
   }
+}
 function toggleDetails(force){
   const open = force !== undefined ? force : !state.detailsOpen;
   state.detailsOpen = open;
@@ -818,17 +832,25 @@ function toggleDetails(force){
 
   el.toggleDetails.addEventListener('click', () => toggleDetails());
   el.closeDetails.addEventListener('click', () => toggleDetails(false));
-  el.leaveRoom.addEventListener('click', async () => {
-    const r = activeRoom();
-    if(!r || r.type === 'global'){ showToast('全体チャットは退出できません'); return; }
-    // 退出APIは未実装。ローカルから除去のみ。
+el.leaveRoom.addEventListener('click', async () => {
+  const r = activeRoom();
+  if(!r || r.type === 'global'){ showToast('全体チャットは退出できません'); return; }
+
+  if(!confirm(`「${r.name}」を退出しますか？`)) return;
+
+  try {
+    const result = await api(`/api/rooms/${r.id}/members/me`, { method: 'DELETE' });
+    // ローカル状態から除去
     state.rooms = state.rooms.filter(x => x.id !== r.id);
     state.activeRoomId = state.rooms[0]?.id || null;
     if(state.activeRoomId) openRoom(state.activeRoomId);
     renderRoomList();
     toggleDetails(false);
-    showToast('ルームを退出しました');
-  });
+    showToast(result.deleted ? 'ルームを退出し、削除しました' : 'ルームを退出しました');
+  } catch (e) {
+    showToast(e.message);
+  }
+});
 
   /* サイドバー開閉（PC・モバイル共通） */
 el.sidebarToggle.addEventListener('click', () => {
