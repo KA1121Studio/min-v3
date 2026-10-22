@@ -261,20 +261,21 @@ el.inviteSendBtn.addEventListener('click', async () => {
     });
   }
 
-  function enterApp(user){
-    // user: { id, username, avatarColor }
-    state.me = {
-      id: user.id,
-      name: user.username,
-      initials: user.username.slice(0,2).toUpperCase(),
-      colorIdx: user.avatarColor ?? 0,
-    };
-    el.meName.textContent = state.me.name;
-    el.meAvatar.textContent = state.me.initials;
-    el.meAvatar.style.background = colorOf(state.me.colorIdx);
-    switchScreen('appScreen');
-    loadRooms();
-  }
+function enterApp(user){
+  state.me = {
+    id: user.id,
+    name: user.username,
+    initials: user.username.slice(0,2).toUpperCase(),
+    colorIdx: user.avatarColor ?? 0,
+    isAdmin: !!user.isAdmin,
+  };
+  el.meName.textContent = state.me.name;
+  el.meAvatar.textContent = state.me.initials;
+  el.meAvatar.style.background = colorOf(state.me.colorIdx);
+  switchScreen('appScreen');
+  loadRooms();
+  refreshInvites();
+}
 
   async function doLogin(){
     const name = el.loginName.value.trim();
@@ -811,43 +812,123 @@ function toggleDetails(force){
   /* =====================================================
      管理画面（デモ・ローカル表示のみ）
   ===================================================== */
-  function openAdminLogin(){
-    el.adminPass.value = '';
-    setErr(el.adminErr, '');
-    openModal('adminLoginModal');
-    setTimeout(() => el.adminPass.focus(), 50);
+function openAdminLogin(){
+  if(!state.me?.isAdmin){
+    showToast('管理者権限がありません');
+    return;
   }
-  function tryEnterAdmin(){
-    if(el.adminPass.value !== ADMIN_PASSWORD){
-      setErr(el.adminErr, 'パスワードが違います');
-      return;
-    }
-    closeModal('adminLoginModal');
-    renderAdmin();
-    switchScreen('adminScreen');
-  }
-  function renderAdmin(){
-    el.statUsers.textContent = state.rooms.reduce((a, r) => a + (r.memberCount || 0), 0);
-    el.statRooms.textContent = state.rooms.length;
-    el.statMsgs.textContent = state.messages.length;
+  renderAdmin();
+  switchScreen('adminScreen');
+}
+async function renderAdmin(){
+  // サマリー
+  try {
+    const s = await api('/api/admin/stats');
+    el.statUsers.textContent = s.users;
+    el.statRooms.textContent = s.rooms;
+    el.statMsgs.textContent = s.messages;
+  } catch (e) { showToast(e.message); }
 
+  // ルーム一覧
+  el.adminRoomList.innerHTML = '<div class="table-row"><div class="grow">読み込み中...</div></div>';
+  try {
+    const { rooms } = await api('/api/admin/rooms');
     el.adminRoomList.innerHTML = '';
-    state.rooms.forEach(r => {
+    rooms.forEach(r => {
       const row = document.createElement('div');
       row.className = 'table-row';
       const nm = document.createElement('div');
       nm.className = 'grow';
-      nm.textContent = `${r.ico} ${r.name}`;
+      nm.textContent = `${r.ico || '💬'} ${r.name}`;
       const type = document.createElement('span');
       type.className = 'pill ' + (r.type === 'private' ? 'warn' : 'ok');
       type.textContent = r.type === 'global' ? '全体' : r.type === 'open' ? 'オープン' : '非公開';
-      row.append(nm, type);
+      const del = document.createElement('button');
+      del.className = 'btn ghost';
+      del.textContent = '削除';
+      del.disabled = r.type === 'global';
+      del.addEventListener('click', async () => {
+        if(!await confirmAction(`「${r.name}」を削除しますか？`)) return;
+        try {
+          await api(`/api/admin/rooms/${r.id}`, { method: 'DELETE' });
+          showToast('ルームを削除しました');
+          renderAdmin();
+        } catch (e) { showToast(e.message); }
+      });
+      row.append(nm, type, del);
       el.adminRoomList.appendChild(row);
     });
-
-    el.adminUserList.innerHTML = '<div class="table-row"><div class="grow">（ユーザー一覧APIは未実装）</div></div>';
-    el.adminReports.innerHTML = '<div class="table-row"><div class="grow">通報はありません</div></div>';
+  } catch (e) {
+    el.adminRoomList.innerHTML = `<div class="table-row"><div class="grow">${e.message}</div></div>`;
   }
+
+  // ユーザー一覧
+  el.adminUserList.innerHTML = '<div class="table-row"><div class="grow">読み込み中...</div></div>';
+  try {
+    const { users } = await api('/api/admin/users');
+    el.adminUserList.innerHTML = '';
+    users.forEach(u => {
+      const row = document.createElement('div');
+      row.className = 'table-row';
+      const nm = document.createElement('div');
+      nm.className = 'grow';
+      nm.textContent = u.username + (u.is_admin ? ' 👑' : '');
+      const st = document.createElement('span');
+      st.className = 'pill ' + (u.is_suspended ? 'danger' : 'ok');
+      st.textContent = u.is_suspended ? '停止中' : 'active';
+      const act = document.createElement('button');
+      act.className = 'btn ghost';
+      act.textContent = u.is_suspended ? '再開' : '停止';
+      act.addEventListener('click', async () => {
+        try {
+          await api(`/api/admin/users/${u.id}`, {
+            method: 'PATCH', body: { is_suspended: !u.is_suspended },
+          });
+          renderAdmin();
+        } catch (e) { showToast(e.message); }
+      });
+      row.append(nm, st, act);
+      el.adminUserList.appendChild(row);
+    });
+  } catch (e) {
+    el.adminUserList.innerHTML = `<div class="table-row"><div class="grow">${e.message}</div></div>`;
+  }
+
+  // 通報一覧
+  el.adminReports.innerHTML = '<div class="table-row"><div class="grow">読み込み中...</div></div>';
+  try {
+    const { reports } = await api('/api/admin/reports');
+    el.adminReports.innerHTML = '';
+    if(!reports.length){
+      el.adminReports.innerHTML = '<div class="table-row"><div class="grow">通報はありません</div></div>';
+    } else {
+      reports.forEach(rp => {
+        const row = document.createElement('div');
+        row.className = 'table-row';
+        const txt = document.createElement('div');
+        txt.className = 'grow';
+        txt.textContent = `${rp.reporter?.username || '?'} → ${rp.target?.username || '?'} : ${rp.reason}`;
+        const st = document.createElement('span');
+        st.className = 'pill ' + (rp.status === 'open' ? 'danger' : 'ok');
+        st.textContent = rp.status === 'open' ? '要対応' : rp.status === 'resolved' ? '解決済み' : '却下';
+        const res = document.createElement('button');
+        res.className = 'btn ghost';
+        res.textContent = '解決';
+        res.disabled = rp.status !== 'open';
+        res.addEventListener('click', async () => {
+          try {
+            await api(`/api/admin/reports/${rp.id}`, { method: 'PATCH', body: { status: 'resolved' } });
+            renderAdmin();
+          } catch (e) { showToast(e.message); }
+        });
+        row.append(txt, st, res);
+        el.adminReports.appendChild(row);
+      });
+    }
+  } catch (e) {
+    el.adminReports.innerHTML = `<div class="table-row"><div class="grow">${e.message}</div></div>`;
+  }
+}
 
   /* =====================================================
      イベント登録
@@ -965,11 +1046,15 @@ el.scrim.addEventListener('click', () => {
   el.adminPass.addEventListener('keydown', e => { if(e.key === 'Enter') tryEnterAdmin(); });
   el.adminExit.addEventListener('click', () => switchScreen('appScreen'));
 
-  el.clearAll.addEventListener('click', () => {
-    state.messages = [];
-    renderMessages();
-    showToast('表示中メッセージをクリアしました（デモ）');
-  });
+el.clearAll.addEventListener('click', async () => {
+  if(!state.me?.isAdmin){ showToast('管理者権限がありません'); return; }
+  if(!await confirmAction('全メッセージを削除しますか？この操作は取り消せません。')) return;
+  try {
+    await api('/api/admin/messages', { method: 'DELETE' });
+    showToast('全メッセージを削除しました');
+    renderAdmin();
+  } catch (e) { showToast(e.message); }
+});
 
 
 
