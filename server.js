@@ -59,7 +59,6 @@ app.post('/api/signup', async (req, res) => {
   if (!password || password.length < 4)
     return res.status(400).json({ error: 'パスワードは4文字以上です' });
 
-  // Supabase Auth のメールは username から合成（ログインには使わない）
   const email = `${username.toLowerCase()}@min3.local`;
 
   const { data, error } = await supabase.auth.admin.createUser({
@@ -70,6 +69,14 @@ app.post('/api/signup', async (req, res) => {
   });
 
   if (error) {
+    // ★ ここを追加：Supabaseの生エラーをRenderのログに出力
+    console.error('[signup] supabase error:', {
+      message: error.message,
+      status: error.status,
+      code: error.code,
+      name: error.name,
+    });
+
     const msg = /already/i.test(error.message)
       ? 'このユーザー名は既に使われています'
       : 'アカウント作成に失敗しました';
