@@ -225,3 +225,48 @@ create policy "room_invites_insert"
 create policy "room_invites_update"
   on public.room_invites for update
   using (auth.uid() = invitee_id);
+
+
+-- =====================================================
+-- 6. reactions（メッセージへのリアクション）
+-- =====================================================
+create table if not exists public.reactions (
+  message_id uuid not null references public.messages(id) on delete cascade,
+  user_id    uuid not null references public.profiles(id) on delete cascade,
+  emoji      text not null check (char_length(emoji) between 1 and 8),
+  created_at timestamptz not null default now(),
+  primary key (message_id, user_id, emoji)
+);
+
+create index if not exists idx_reactions_message
+  on public.reactions (message_id);
+
+alter table public.reactions enable row level security;
+
+-- メッセージが見えるユーザーはリアクションも閲覧可
+create policy "reactions_select"
+  on public.reactions for select
+  using (
+    exists (
+      select 1 from public.messages m
+      join public.rooms r on r.id = m.room_id
+      where m.id = reactions.message_id
+        and (
+          r.type in ('global','open')
+          or exists (
+            select 1 from public.room_members mm
+            where mm.room_id = r.id and mm.user_id = auth.uid()
+          )
+        )
+    )
+  );
+
+-- 自分名義でのみ追加可
+create policy "reactions_insert"
+  on public.reactions for insert
+  with check (auth.uid() = user_id);
+
+-- 自分のリアクションは削除可
+create policy "reactions_delete"
+  on public.reactions for delete
+  using (auth.uid() = user_id);
