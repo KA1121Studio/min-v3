@@ -119,10 +119,48 @@
     leaveModal: $('leaveModal'),
     leaveModalDesc: $('leaveModalDesc'),
     leaveConfirmBtn: $('leaveConfirmBtn'),
+
+    inviteModal: $('inviteModal'),
+    inviteName: $('inviteName'),
+    inviteErr: $('inviteErr'),
+    inviteSendBtn: $('inviteSendBtn'),
+    inviteMemberBtn: $('inviteMemberBtn'),
+    openInvites: $('openInvites'),
+    inviteBadge: $('inviteBadge'),                                                                                  
   };
 
   let selectedAvatar = 0;
   let createType = 'open';
+
+  el.inviteMemberBtn.addEventListener('click', () => {
+  const r = activeRoom();
+  if(!r){ return; }
+  if(r.type !== 'private'){ showToast('プライベートルームのみ招待できます'); return; }
+  el.inviteName.value = '';
+  setErr(el.inviteErr, '');
+  openModal('inviteModal');
+  setTimeout(() => el.inviteName.focus(), 50);
+});
+
+el.inviteSendBtn.addEventListener('click', async () => {
+  const r = activeRoom();
+  const name = el.inviteName.value.trim();
+  setErr(el.inviteErr, '');
+  if(!name){ setErr(el.inviteErr, 'ユーザー名を入力してください'); return; }
+
+  el.inviteSendBtn.disabled = true;
+  try {
+    const { invitee } = await api(`/api/rooms/${r.id}/invites`, {
+      method: 'POST', body: { username: name },
+    });
+    closeModal('inviteModal');
+    showToast(`${invitee} さんを招待しました`);
+  } catch (e) {
+    setErr(el.inviteErr, e.message);
+  } finally {
+    el.inviteSendBtn.disabled = false;
+  }
+});
 
   /* =====================================================
      共通ユーティリティ
@@ -433,7 +471,7 @@
         time: timeStr(m.createdAt),
         createdAt: m.createdAt,
         mine: m.mine,
-        reactions: {},
+        reactions: m.reactions || {},,
         readBy: [],
       }));
       renderMessages();
@@ -486,23 +524,23 @@
       const b = document.createElement('button');
       b.className = 'react-btn';
       b.textContent = rx;
-      b.addEventListener('click', () => addReaction(m, rx));
+      b.addEventListener('click', () => toggleReaction(m, rx, false));
       actions.appendChild(b);
     });
     tail.appendChild(actions);
 
-    if(m.reactions && Object.keys(m.reactions).length){
-      const bar = document.createElement('div');
-      bar.className = 'reactions';
-      Object.entries(m.reactions).forEach(([rx, cnt]) => {
-        const chip = document.createElement('button');
-        chip.className = 'react-chip';
-        chip.textContent = `${rx} ${cnt}`;
-        chip.addEventListener('click', () => addReaction(m, rx));
-        bar.appendChild(chip);
-      });
-      tail.appendChild(bar);
-    }
+if(m.reactions && Object.keys(m.reactions).length){
+  const bar = document.createElement('div');
+  bar.className = 'reactions';
+  Object.entries(m.reactions).forEach(([rx, obj]) => {
+    const chip = document.createElement('button');
+    chip.className = 'react-chip' + (obj.mine ? ' mine' : '');
+    chip.textContent = `${rx} ${obj.count}`;
+    chip.addEventListener('click', () => toggleReaction(m, rx, obj.mine));
+    bar.appendChild(chip);
+  });
+  tail.appendChild(bar);
+}
 
     col.append(meta, tail);
 
@@ -517,12 +555,19 @@
     return wrap;
   }
 
-  function addReaction(m, rx){
-    // ローカル表示のみ（永続化は将来対応）
-    m.reactions = m.reactions || {};
-    m.reactions[rx] = (m.reactions[rx] || 0) + 1;
-    renderMessages();
+async function toggleReaction(m, rx, isMine){
+  try {
+    if(isMine){
+      await api(`/api/messages/${m.id}/reactions`, { method: 'DELETE', body: { emoji: rx } });
+    } else {
+      await api(`/api/messages/${m.id}/reactions`, { method: 'POST', body: { emoji: rx } });
+    }
+    // 再取得して反映
+    await loadMessages(state.activeRoomId);
+  } catch (e) {
+    showToast(e.message);
   }
+}
 
   /* =====================================================
      Realtime 購読（Supabase）
@@ -849,17 +894,15 @@ el.leaveConfirmBtn.addEventListener('click', async () => {
 
   try {
     const result = await api(`/api/rooms/${r.id}/members/me`, { method: 'DELETE' });
-    state.rooms = state.rooms.filter(x => x.id !== r.id);
-    state.activeRoomId = state.rooms[0]?.id || null;
-    if(state.activeRoomId) openRoom(state.activeRoomId);
-    renderRoomList();
+    state.activeRoomId = null;
+    state.messages = [];
     toggleDetails(false);
+    await loadRooms();           // サーバーから再取得
     showToast(result.deleted ? 'ルームを退出し、削除しました' : 'ルームを退出しました');
   } catch (e) {
     showToast(e.message);
   }
 });
-
   /* サイドバー開閉（PC・モバイル共通） */
 el.sidebarToggle.addEventListener('click', () => {
   if(window.innerWidth <= 820){
@@ -891,6 +934,59 @@ el.scrim.addEventListener('click', () => {
     renderMessages();
     showToast('表示中メッセージをクリアしました（デモ）');
   });
+
+                              invitesModal: $('invitesModal'),
+invitesList: $('invitesList'),
+
+async function refreshInvites(){
+  try {
+    const { invites } = await api('/api/invites');
+    const badge = el.inviteBadge;
+    if(badge){
+      badge.style.display = invites.length ? 'inline-flex' : 'none';
+      badge.textContent = String(invites.length);
+    }
+    el.invitesList.innerHTML = '';
+    if(!invites.length){
+      el.invitesList.innerHTML = '<div style="font-size:13px;color:var(--muted)">招待はありません</div>';
+      return;
+    }
+    invites.forEach(inv => {
+      const row = document.createElement('div');
+      row.className = 'table-row';
+      const info = document.createElement('div');
+      info.className = 'grow';
+      info.innerHTML = `<b>${inv.roomIco} ${inv.roomName}</b><div style="font-size:11px;color:var(--muted)">${inv.inviterName} さんから</div>`;
+      const acc = document.createElement('button');
+      acc.className = 'btn primary';
+      acc.textContent = '参加';
+      acc.addEventListener('click', async () => {
+        try {
+          await api(`/api/invites/${inv.id}/accept`, { method: 'POST' });
+          showToast(`「${inv.roomName}」に参加しました`);
+          await refreshInvites();
+          await loadRooms();
+        } catch (e) { showToast(e.message); }
+      });
+      const dec = document.createElement('button');
+      dec.className = 'btn ghost';
+      dec.textContent = '辞退';
+      dec.addEventListener('click', async () => {
+        try {
+          await api(`/api/invites/${inv.id}/decline`, { method: 'POST' });
+          await refreshInvites();
+        } catch (e) { showToast(e.message); }
+      });
+      row.append(info, acc, dec);
+      el.invitesList.appendChild(row);
+    });
+  } catch (e) { /* 未ログイン時など */ }
+}
+
+el.openInvites.addEventListener('click', async () => {
+  await refreshInvites();
+  openModal('invitesModal');
+});
 
   /* =====================================================
      起動
