@@ -272,3 +272,51 @@ create policy "reactions_delete"
   using (auth.uid() = user_id);
 
 alter publication supabase_realtime add table public.reactions;
+
+-- =====================================================
+-- profiles に管理者フラグを追加
+-- =====================================================
+alter table public.profiles
+  add column if not exists is_admin boolean not null default false;
+
+-- 初回管理者を設定（自分のユーザー名に置き換えて実行）
+-- update public.profiles set is_admin = true where username = 'あなたのユーザー名';
+
+-- =====================================================
+-- 通報テーブル
+-- =====================================================
+create table if not exists public.reports (
+  id          uuid primary key default gen_random_uuid(),
+  reporter_id uuid not null references public.profiles(id) on delete cascade,
+  message_id  uuid references public.messages(id) on delete set null,
+  target_user uuid references public.profiles(id) on delete set null,
+  reason      text not null,
+  status      text not null default 'open' check (status in ('open','resolved','dismissed')),
+  created_at  timestamptz not null default now()
+);
+
+alter table public.reports enable row level security;
+
+-- 通報者本人 or 管理者が閲覧可
+create policy "reports_select"
+  on public.reports for select
+  using (
+    auth.uid() = reporter_id
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+-- ログインユーザーは通報を作成可
+create policy "reports_insert"
+  on public.reports for insert
+  with check (auth.uid() = reporter_id);
+
+-- 管理者のみ更新可
+create policy "reports_update_admin"
+  on public.reports for update
+  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin));
+
+-- =====================================================
+-- アカウント停止フラグ
+-- =====================================================
+alter table public.profiles
+  add column if not exists is_suspended boolean not null default false;
