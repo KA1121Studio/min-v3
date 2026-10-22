@@ -564,8 +564,7 @@ async function toggleReaction(m, rx, isMine){
     } else {
       await api(`/api/messages/${m.id}/reactions`, { method: 'POST', body: { emoji: rx } });
     }
-    // 再取得して反映
-    await loadMessages(state.activeRoomId);
+    // 反映はRealtime購読に任せる（即時性のため楽観的更新を入れてもよい）
   } catch (e) {
     showToast(e.message);
   }
@@ -581,42 +580,77 @@ async function toggleReaction(m, rx, isMine){
     state.channel = null;
   }
 
-  function subscribeRoom(roomId){
-    unsubscribeRoom();
-    if(!sb) return; // Supabase未設定ならRealtimeなしで動作
+function subscribeRoom(roomId){
+  unsubscribeRoom();
+  if(!sb) return;
 
-    state.channel = sb
-      .channel(`room:${roomId}`)
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'messages',
-        filter: `room_id=eq.${roomId}`,
-      }, payload => {
-        const row = payload.new;
-        // 自分の送信分は楽観的更新済みなのでスキップ
-        if(row.user_id === state.me.id) return;
-        if(state.messages.some(m => m.id === row.id)) return;
+  state.channel = sb
+    .channel(`room:${roomId}`)
+    // メッセージ追加
+    .on('postgres_changes', {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'messages',
+      filter: `room_id=eq.${roomId}`,
+    }, payload => {
+      const row = payload.new;
+      if(row.user_id === state.me.id) return;
+      if(state.messages.some(m => m.id === row.id)) return;
 
-        state.messages.push({
-          id: row.id,
-          userId: row.user_id,
-          name: '...',              // Realtime payloadには join 結果が無いので仮表示
-          initials: '?',
-          colorIdx: 0,
-          text: row.content,
-          time: timeStr(row.created_at),
-          createdAt: row.created_at,
-          mine: false,
-          reactions: {},
-          readBy: [],
-        });
-        renderMessages();
-        // 名前解決のため軽く再取得（頻繁すぎるならデバウンス）
-        refreshMessagesSoon(roomId);
-      })
-      .subscribe();
+      state.messages.push({
+        id: row.id,
+        userId: row.user_id,
+        name: '...',
+        initials: '?',
+        colorIdx: 0,
+        text: row.content,
+        time: timeStr(row.created_at),
+        createdAt: row.created_at,
+        mine: false,
+        reactions: {},
+        readBy: [],
+      });
+      renderMessages();
+      refreshMessagesSoon(roomId);
+    })
+    // リアクション追加
+    .on('postgres_changes', {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'reactions',
+    }, payload => {
+      applyReactionChange(payload.new.message_id, payload.new.emoji, +1, payload.new.user_id === state.me.id);
+    })
+    // リアクション削除
+    .on('postgres_changes', {
+      event: 'DELETE',
+      schema: 'public',
+      table: 'reactions',
+    }, payload => {
+      const old = payload.old;
+      if(!old || !old.message_id) return;
+      applyReactionChange(old.message_id, old.emoji, -1, old.user_id === state.me.id);
+    })
+    .subscribe();
+}
+
+/* ローカルのメッセージ配列にリアクション増減を反映 */
+function applyReactionChange(messageId, emoji, delta, isMine){
+  const msg = state.messages.find(m => m.id === messageId);
+  if(!msg) return;                       // 表示中のルームに無いメッセージは無視
+  msg.reactions = msg.reactions || {};
+  const cur = msg.reactions[emoji] || { count: 0, mine: false };
+  const next = {
+    count: Math.max(0, cur.count + delta),
+    mine: isMine ? (delta > 0) : cur.mine,
+  };
+  if(next.count === 0){
+    delete msg.reactions[emoji];
+  } else {
+    msg.reactions[emoji] = next;
   }
+  renderMessages();
+}
 
   let refreshTimer = null;
   function refreshMessagesSoon(roomId){
