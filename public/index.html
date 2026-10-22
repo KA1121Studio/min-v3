@@ -60,7 +60,7 @@
     <div id="signupForm" class="hidden">
       <div class="field">
         <label for="signupName">ユーザー名（1〜24文字）</label>
-        <input id="signupName" class="input" maxlength="24" placeholder="例: たろう" autocomplete="username" />
+        <input id="signupName" class="input" maxlength="24" placeholder="例: 田所 浩二" autocomplete="username" />
       </div>
       <div class="field">
         <label for="signupPass">パスワード（6文字以上）</label>
@@ -92,50 +92,57 @@
 <section id="appScreen" class="screen">
   <div class="app-shell">
 
-    <aside class="sidebar" id="sidebar">
-      <div class="sidebar-head">
-        <div class="me">
-          <div class="avatar md" id="meAvatar">T</div>
-          <div style="min-width:0">
-            <div class="me-name" id="meName">たろう</div>
-            <div class="me-status"><span class="dot"></span>オンライン</div>
-          </div>
-        </div>
-        <button class="icon-btn" id="openAdmin" title="管理画面">⚙️</button>
-        <button class="icon-btn" id="logoutBtn" title="ログアウト">🚪</button>
-      </div>
+ <aside class="sidebar" id="sidebar">
+  <!-- 上部：ロゴ＋タイトル -->
+  <div class="sidebar-brand">
+    <div class="logo logo-sm"></div>
+    <div class="brand-title-sm">min3 Chat</div>
+  </div>
 
-      <div class="sidebar-search">
-        <div class="search-wrap">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>
-          </svg>
-          <input class="input" id="roomSearch" placeholder="ルームを検索..." />
-        </div>
-      </div>
+  <div class="sidebar-search">
+    <div class="search-wrap">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>
+      </svg>
+      <input class="input" id="roomSearch" placeholder="ルームを検索..." />
+    </div>
+  </div>
 
-      <div class="tabs" id="tabs">
-        <button class="chip active" data-filter="all">すべて</button>
-        <button class="chip" data-filter="global">🌐 全体</button>
-        <button class="chip" data-filter="open">👥 オープン</button>
-        <button class="chip" data-filter="private">🔒 プライベート</button>
-      </div>
+  <div class="tabs" id="tabs">
+    <button class="chip active" data-filter="all">すべて</button>
+    <button class="chip" data-filter="global">🌐 全体</button>
+    <button class="chip" data-filter="open">👥 オープン</button>
+    <button class="chip" data-filter="private">🔒 プライベート</button>
+  </div>
 
-      <div class="room-list" id="roomList"></div>
-      <button class="fab" id="fabCreate" title="ルーム作成">＋</button>
-    </aside>
+  <div class="room-list" id="roomList"></div>
+  <button class="fab" id="fabCreate" title="ルーム作成">＋</button>
+
+  <!-- 下部：ユーザー情報＋操作 -->
+  <div class="sidebar-foot">
+    <div class="me">
+      <div class="avatar md" id="meAvatar">T</div>
+      <div style="min-width:0">
+        <div class="me-name" id="meName">田所</div>
+        <div class="me-status"><span class="dot"></span>オンライン</div>
+      </div>
+    </div>
+    <button class="icon-btn" id="openAdmin" title="管理画面">⚙️</button>
+    <button class="icon-btn" id="logoutBtn" title="ログアウト">🚪</button>
+  </div>
+</aside>
 
     <main class="chat">
-      <header class="chat-head">
-        <button class="icon-btn back-btn" id="backBtn">←</button>
-        <div class="room-ico" id="chatIco">🌐</div>
-        <div style="min-width:0">
-          <div class="chat-title" id="chatTitle">全体チャット</div>
-          <div class="chat-sub" id="chatSub">読み込み中...</div>
-        </div>
-        <div class="spacer"></div>
-        <button class="icon-btn" id="toggleDetails" title="詳細">ℹ️</button>
-      </header>
+<header class="chat-head">
+  <button class="sidebar-toggle" id="sidebarToggle" title="サイドバー開閉">☰</button>
+  <div class="room-ico" id="chatIco">🌐</div>
+  <div style="min-width:0">
+    <div class="chat-title" id="chatTitle">全体チャット</div>
+    <div class="chat-sub" id="chatSub">読み込み中...</div>
+  </div>
+  <div class="spacer"></div>
+  <button class="icon-btn" id="toggleDetails" title="ルーム情報">ℹ️</button>
+</header>
 
       <div class="messages" id="messages"></div>
       <div class="typing" id="typingBar"></div>
