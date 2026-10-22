@@ -302,6 +302,91 @@ app.post('/api/messages', authRequired, async (req, res) => {
   });
 });
 
+             
+/* =====================================================
+   GET /api/rooms/:id/members
+   参加メンバー一覧
+===================================================== */
+app.get('/api/rooms/:id/members', authRequired, async (req, res) => {
+  const roomId = req.params.id;
+
+  const { data: room } = await supabase
+    .from('rooms')
+    .select('id, type')
+    .eq('id', roomId)
+    .maybeSingle();
+  if (!room) return res.status(404).json({ error: 'ルームが見つかりません' });
+
+  // privateはメンバーのみ閲覧可
+  if (room.type === 'private') {
+    const { data: m } = await supabase
+      .from('room_members')
+      .select('room_id')
+      .eq('room_id', roomId)
+      .eq('user_id', req.user.sub)
+      .maybeSingle();
+    if (!m) return res.status(403).json({ error: '参加していません' });
+  }
+
+  const { data, error } = await supabase
+    .from('room_members')
+    .select('user_id, joined_at, profiles:user_id (username, avatar_color)')
+    .eq('room_id', roomId)
+    .order('joined_at', { ascending: true });
+
+  if (error) return res.status(500).json({ error: 'メンバー取得に失敗しました' });
+
+  return res.json({
+    members: (data || []).map((m) => ({
+      userId: m.user_id,
+      name: m.profiles?.username || '?',
+      avatarColor: m.profiles?.avatar_color ?? 0,
+      joinedAt: m.joined_at,
+      isMe: m.user_id === req.user.sub,
+    })),
+  });
+});
+
+/* =====================================================
+   DELETE /api/rooms/:id/members/me
+   自分をルームから退出させる
+===================================================== */
+app.delete('/api/rooms/:id/members/me', authRequired, async (req, res) => {
+  const roomId = req.params.id;
+
+  const { data: room } = await supabase
+    .from('rooms')
+    .select('id, type, created_by')
+    .eq('id', roomId)
+    .maybeSingle();
+  if (!room) return res.status(404).json({ error: 'ルームが見つかりません' });
+  if (room.type === 'global') return res.status(400).json({ error: '全体チャットは退出できません' });
+
+  // 参加していなければ何もしない
+  const { data: m } = await supabase
+    .from('room_members')
+    .select('room_id')
+    .eq('room_id', roomId)
+    .eq('user_id', req.user.sub)
+    .maybeSingle();
+  if (!m) return res.status(400).json({ error: '参加していません' });
+
+  const { error } = await supabase
+    .from('room_members')
+    .delete()
+    .eq('room_id', roomId)
+    .eq('user_id', req.user.sub);
+
+  if (error) return res.status(500).json({ error: '退出に失敗しました' });
+
+  // プライベートルームで作成者が退出したら、ルーム自体を削除（任意）
+  if (room.type === 'private' && room.created_by === req.user.sub) {
+    await supabase.from('rooms').delete().eq('id', roomId);
+    return res.json({ ok: true, deleted: true });
+  }
+
+  return res.json({ ok: true });
+});
 /* =====================================================
    ヘルスチェック & 静的配信
 ===================================================== */
