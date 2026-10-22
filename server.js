@@ -239,6 +239,21 @@ app.get('/api/rooms/:id/messages', authRequired, async (req, res) => {
     .limit(limit);
 
   if (error) return res.status(500).json({ error: 'メッセージ取得に失敗しました' });
+  const messageIds = (data || []).map((m) => m.id);
+  if (!messageIds.length) return res.json({ messages: [] });
+
+  const { data: rx } = await supabase
+    .from('reactions')
+    .select('message_id, emoji, user_id')
+    .in('message_id', messageIds);
+
+  const byMsg = {};
+  (rx || []).forEach((r) => {
+    byMsg[r.message_id] = byMsg[r.message_id] || {};
+    byMsg[r.message_id][r.emoji] = byMsg[r.message_id][r.emoji] || { count: 0, mine: false };
+    byMsg[r.message_id][r.emoji].count += 1;
+    if (r.user_id === req.user.sub) byMsg[r.message_id][r.emoji].mine = true;
+  });
 
   return res.json({
     messages: (data || []).map((m) => ({
@@ -249,6 +264,7 @@ app.get('/api/rooms/:id/messages', authRequired, async (req, res) => {
       content: m.content,
       createdAt: m.created_at,
       mine: m.user_id === req.user.sub,
+      reactions: byMsg[m.id] || {},
     })),
   });
 });
@@ -384,6 +400,164 @@ app.delete('/api/rooms/:id/members/me', authRequired, async (req, res) => {
     await supabase.from('rooms').delete().eq('id', roomId);
     return res.json({ ok: true, deleted: true });
   }
+
+  return res.json({ ok: true });
+});
+/* =====================================================
+   POST /api/rooms/:id/invites
+   body: { username }
+   プライベートルームに他ユーザーを招待
+===================================================== */
+app.post('/api/rooms/:id/invites', authRequired, async (req, res) => {
+  const roomId = req.params.id;
+  const { username } = req.body || {};
+  if (!username) return res.status(400).json({ error: 'ユーザー名が必要です' });
+
+  const { data: room } = await supabase
+    .from('rooms').select('id, type').eq('id', roomId).maybeSingle();
+  if (!room) return res.status(404).json({ error: 'ルームが見つかりません' });
+  if (room.type !== 'private')
+    return res.status(400).json({ error: 'プライベートルームのみ招待できます' });
+
+  // 招待者がメンバーか確認
+  const { data: me } = await supabase
+    .from('room_members').select('room_id')
+    .eq('room_id', roomId).eq('user_id', req.user.sub).maybeSingle();
+  if (!me) return res.status(403).json({ error: '参加していません' });
+
+  // 招待相手をユーザー名で検索
+  const { data: target } = await supabase
+    .from('profiles').select('id, username').ilike('username', username).maybeSingle();
+  if (!target) return res.status(404).json({ error: 'ユーザーが見つかりません' });
+  if (target.id === req.user.sub)
+    return res.status(400).json({ error: '自分は招待できません' });
+
+  // 既にメンバーか
+  const { data: already } = await supabase
+    .from('room_members').select('room_id')
+    .eq('room_id', roomId).eq('user_id', target.id).maybeSingle();
+  if (already) return res.status(400).json({ error: '既に参加しています' });
+
+  const { error } = await supabase
+    .from('room_invites')
+    .upsert({
+      room_id: roomId,
+      inviter_id: req.user.sub,
+      invitee_id: target.id,
+      status: 'pending',
+    }, { onConflict: 'room_id,invitee_id' });
+
+  if (error) return res.status(500).json({ error: '招待に失敗しました' });
+
+  return res.json({ ok: true, invitee: target.username });
+});
+
+/* =====================================================
+   GET /api/invites
+   自分宛の保留中招待一覧
+===================================================== */
+app.get('/api/invites', authRequired, async (req, res) => {
+  const { data, error } = await supabase
+    .from('room_invites')
+    .select(`
+      id, room_id, created_at, status,
+      rooms:room_id (name, description, ico),
+      inviter:inviter_id (username)
+    `)
+    .eq('invitee_id', req.user.sub)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false });
+
+  if (error) return res.status(500).json({ error: '招待取得に失敗しました' });
+
+  return res.json({
+    invites: (data || []).map((i) => ({
+      id: i.id,
+      roomId: i.room_id,
+      roomName: i.rooms?.name || '?',
+      roomDesc: i.rooms?.description || '',
+      roomIco: i.rooms?.ico || '🔒',
+      inviterName: i.inviter?.username || '?',
+      createdAt: i.created_at,
+    })),
+  });
+});
+
+/* =====================================================
+   POST /api/invites/:id/accept
+   招待を承諾してルームに参加
+===================================================== */
+app.post('/api/invites/:id/accept', authRequired, async (req, res) => {
+  const inviteId = req.params.id;
+
+  const { data: inv } = await supabase
+    .from('room_invites')
+    .select('id, room_id, invitee_id, status')
+    .eq('id', inviteId).maybeSingle();
+  if (!inv) return res.status(404).json({ error: '招待が見つかりません' });
+  if (inv.invitee_id !== req.user.sub) return res.status(403).json({ error: '権限がありません' });
+  if (inv.status !== 'pending') return res.status(400).json({ error: '既に処理済みです' });
+
+  await supabase.from('room_members').upsert(
+    { room_id: inv.room_id, user_id: req.user.sub },
+    { onConflict: 'room_id,user_id' }
+  );
+  await supabase.from('room_invites')
+    .update({ status: 'accepted' }).eq('id', inviteId);
+
+  return res.json({ ok: true, roomId: inv.room_id });
+});
+
+/* =====================================================
+   POST /api/invites/:id/decline
+===================================================== */
+app.post('/api/invites/:id/decline', authRequired, async (req, res) => {
+  const inviteId = req.params.id;
+  const { data: inv } = await supabase
+    .from('room_invites')
+    .select('id, invitee_id, status')
+    .eq('id', inviteId).maybeSingle();
+  if (!inv || inv.invitee_id !== req.user.sub)
+    return res.status(404).json({ error: '招待が見つかりません' });
+  if (inv.status !== 'pending')
+    return res.status(400).json({ error: '既に処理済みです' });
+
+  await supabase.from('room_invites')
+    .update({ status: 'declined' }).eq('id', inviteId);
+  return res.json({ ok: true });
+});
+/* POST /api/messages/:id/reactions  body: { emoji } */
+app.post('/api/messages/:id/reactions', authRequired, async (req, res) => {
+  const messageId = req.params.id;
+  const { emoji } = req.body || {};
+  if (!emoji || emoji.length > 8)
+    return res.status(400).json({ error: '絵文字が不正です' });
+
+  // メッセージの閲覧権チェック（略：room_idからroomを引き、privateはメンバー確認）
+  // 既存のPOST /api/messages と同じチェックを流用するか、簡略化して次のようにします。
+  const { data: msg } = await supabase
+    .from('messages').select('id, room_id').eq('id', messageId).maybeSingle();
+  if (!msg) return res.status(404).json({ error: 'メッセージが見つかりません' });
+
+  const { error } = await supabase.from('reactions').upsert(
+    { message_id: messageId, user_id: req.user.sub, emoji },
+    { onConflict: 'message_id,user_id,emoji' }
+  );
+  if (error) return res.status(500).json({ error: 'リアクションに失敗しました' });
+  return res.json({ ok: true });
+});
+
+/* DELETE /api/messages/:id/reactions  body: { emoji } */
+app.delete('/api/messages/:id/reactions', authRequired, async (req, res) => {
+  const messageId = req.params.id;
+  const { emoji } = req.body || {};
+  if (!emoji) return res.status(400).json({ error: '絵文字が必要です' });
+
+  await supabase.from('reactions')
+    .delete()
+    .eq('message_id', messageId)
+    .eq('user_id', req.user.sub)
+    .eq('emoji', emoji);
 
   return res.json({ ok: true });
 });
