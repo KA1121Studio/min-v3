@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>min3 Chat</title>
+<meta name="color-scheme" content="dark" />
+<link rel="stylesheet" href="style.css" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%236c8cff'/></svg>" />
+
+<!-- ===== Supabase 設定（anon key のみ。service_role は絶対に置かない） ===== -->
+<script>
+  // Render の環境変数から注入したい場合は、server.js で /config.js を動的生成する方式に変更可
+  window.__SUPABASE_URL__ = 'https://fylrggeycyrztmdbrjqr.supabase.co';
+  window.__SUPABASE_ANON_KEY__ = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5bHJnZ2V5Y3lyenRtZGJyanFyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI2MTM3NjcsImV4cCI6MjEwODE4OTc2N30.4d3Zx3lgj_z7ufxiESTiGx4VkQneQkkmiChor7-x4GE';
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+<!-- ==================== 認証（ログイン / 新規作成） ==================== -->
+<section id="authScreen" class="screen active">
+  <div class="auth-card">
+    <div class="brand-row">
+      <div class="logo"></div>
+      <div>
+        <div class="brand-title">min3 Chat</div>
+        <div class="brand-sub">つながりを、もっと自由に</div>
+      </div>
+    </div>
+
+    <div class="auth-tabs">
+      <button class="auth-tab active" data-auth="login">ログイン</button>
+      <button class="auth-tab" data-auth="signup">アカウント作成</button>
+    </div>
+
+    <!-- ログインフォーム -->
+    <div id="loginForm">
+      <div class="field">
+        <label for="loginName">ユーザー名</label>
+        <input id="loginName" class="input" maxlength="24" placeholder="ユーザー名" autocomplete="username" />
+      </div>
+      <div class="field">
+        <label for="loginPass">パスワード</label>
+        <div class="pw-wrap">
+          <input id="loginPass" class="input" type="password" placeholder="パスワード" autocomplete="current-password" />
+          <button class="pw-toggle" data-pw="loginPass" type="button" aria-label="パスワード表示切替">👁</button>
+        </div>
+      </div>
+      <div class="err" id="loginErr"></div>
+      <div class="auth-actions">
+        <button class="btn" id="toAdminLogin">管理画面へ</button>
+        <button class="btn primary" id="loginBtn">ログイン</button>
+      </div>
+      <div class="hint">初めての方は「アカウント作成」から登録してください。</div>
+    </div>
+
+    <!-- 新規作成フォーム -->
+    <div id="signupForm" class="hidden">
+      <div class="field">
+        <label for="signupName">ユーザー名（1〜24文字）</label>
+        <input id="signupName" class="input" maxlength="24" placeholder="例: たろう" autocomplete="username" />
+      </div>
+      <div class="field">
+        <label for="signupPass">パスワード（4文字以上）</label>
+        <div class="pw-wrap">
+          <input id="signupPass" class="input" type="password" placeholder="パスワード" autocomplete="new-password" />
+          <button class="pw-toggle" data-pw="signupPass" type="button" aria-label="パスワード表示切替">👁</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="signupPass2">パスワード（確認）</label>
+        <div class="pw-wrap">
+          <input id="signupPass2" class="input" type="password" placeholder="もう一度入力" autocomplete="new-password" />
+          <button class="pw-toggle" data-pw="signupPass2" type="button" aria-label="パスワード表示切替">👁</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>アバターカラー</label>
+        <div class="avatar-picker" id="avatarPicker"></div>
+      </div>
+      <div class="err" id="signupErr"></div>
+      <div class="auth-actions">
+        <button class="btn" id="signupCancel">戻る</button>
+        <button class="btn primary" id="signupBtn">登録する</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== チャットアプリ ==================== -->
+<section id="appScreen" class="screen">
+  <div class="app-shell">
+
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-head">
+        <div class="me">
+          <div class="avatar md" id="meAvatar">T</div>
+          <div style="min-width:0">
+            <div class="me-name" id="meName">たろう</div>
+            <div class="me-status"><span class="dot"></span>オンライン</div>
+          </div>
+        </div>
+        <button class="icon-btn" id="openAdmin" title="管理画面">⚙️</button>
+        <button class="icon-btn" id="logoutBtn" title="ログアウト">🚪</button>
+      </div>
+
+      <div class="sidebar-search">
+        <div class="search-wrap">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>
+          </svg>
+          <input class="input" id="roomSearch" placeholder="ルームを検索..." />
+        </div>
+      </div>
+
+      <div class="tabs" id="tabs">
+        <button class="chip active" data-filter="all">すべて</button>
+        <button class="chip" data-filter="global">🌐 全体</button>
+        <button class="chip" data-filter="open">👥 オープン</button>
+        <button class="chip" data-filter="private">🔒 プライベート</button>
+      </div>
+
+      <div class="room-list" id="roomList"></div>
+      <button class="fab" id="fabCreate" title="ルーム作成">＋</button>
+    </aside>
+
+    <main class="chat">
+      <header class="chat-head">
+        <button class="icon-btn back-btn" id="backBtn">←</button>
+        <div class="room-ico" id="chatIco">🌐</div>
+        <div style="min-width:0">
+          <div class="chat-title" id="chatTitle">全体チャット</div>
+          <div class="chat-sub" id="chatSub">読み込み中...</div>
+        </div>
+        <div class="spacer"></div>
+        <button class="icon-btn" id="toggleDetails" title="詳細">ℹ️</button>
+      </header>
+
+      <div class="messages" id="messages"></div>
+      <div class="typing" id="typingBar"></div>
+
+      <footer class="composer">
+        <div class="composer-row">
+          <div class="composer-box">
+            <textarea id="composerInput" rows="1" placeholder="メッセージを入力..." maxlength="800"></textarea>
+            <div class="composer-tools">
+              <button class="icon-btn" title="絵文字" id="emojiBtn">😊</button>
+              <button class="icon-btn" title="添付" id="attachBtn">📎</button>
+            </div>
+          </div>
+          <button class="send-btn" id="sendBtn" disabled title="送信">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/>
+            </svg>
+          </button>
+        </div>
+      </footer>
+    </main>
+
+    <aside class="details" id="details">
+      <div class="details-head">
+        <div class="details-title">ルーム情報</div>
+        <div style="flex:1"></div>
+        <button class="icon-btn" id="closeDetails">✕</button>
+      </div>
+      <div class="details-section">
+        <h4>このルームについて</h4>
+        <div style="font-size:13px;line-height:1.6;color:var(--muted)" id="detailsDesc"></div>
+      </div>
+      <div class="details-section">
+        <h4>メンバー</h4>
+        <div id="memberList"></div>
+      </div>
+      <div class="details-section">
+        <h4>アクション</h4>
+        <button class="btn danger" id="leaveRoom" style="width:100%">ルームを退出</button>
+      </div>
+    </aside>
+
+  </div>
+  <div class="scrim" id="scrim"></div>
+</section>
+
+<!-- ==================== 管理画面 ==================== -->
+<section id="adminScreen" class="screen">
+  <div class="app-shell">
+    <header class="admin-head">
+      <div class="logo" style="width:34px;height:34px;border-radius:11px"></div>
+      <h2>管理パネル — min3 Chat</h2>
+      <button class="btn" id="adminExit">チャットへ戻る</button>
+    </header>
+    <div class="admin-body">
+      <div class="card">
+        <h3>📊 サマリー</h3>
+        <div class="stat"><span class="num" id="statUsers">0</span><span class="lbl">総ユーザー</span></div>
+        <div class="stat"><span class="num" id="statRooms">0</span><span class="lbl">ルーム数</span></div>
+        <div class="stat"><span class="num" id="statMsgs">0</span><span class="lbl">メッセージ</span></div>
+      </div>
+      <div class="card">
+        <h3>🌐 ルーム管理</h3>
+        <div id="adminRoomList"></div>
+      </div>
+      <div class="card">
+        <h3>👤 ユーザー管理</h3>
+        <div id="adminUserList"></div>
+      </div>
+      <div class="card">
+        <h3>🚩 通報・モデレーション</h3>
+        <div id="adminReports"></div>
+      </div>
+      <div class="card">
+        <h3>⚠️ 危険な操作</h3>
+        <button class="btn danger" id="clearAll" style="width:100%">表示中メッセージをクリア</button>
+        <div style="font-size:11px;color:var(--muted-2)">この操作は取り消せません（デモ）</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== モーダル: ルーム作成 ==================== -->
+<div class="modal-backdrop" id="createModal">
+  <div class="modal">
+    <h3>ルームを作成</h3>
+    <div class="modal-sub">用途に合わせてタイプを選んでください</div>
+    <div class="choice-row">
+      <button class="choice selected" data-type="open">
+        <span class="ico">👥</span>
+        <span class="t">オープンチャット</span>
+        <span class="d">誰でも参加できる公開ルーム。検索から見つけられます。</span>
+      </button>
+      <button class="choice" data-type="private">
+        <span class="ico">🔒</span>
+        <span class="t">プライベート</span>
+        <span class="d">招待された人だけが参加できる非公開ルーム。</span>
+      </button>
+    </div>
+    <div class="field">
+      <label for="newRoomName">ルーム名</label>
+      <input id="newRoomName" class="input" maxlength="32" placeholder="例: 週末ゲーム部" />
+    </div>
+    <div class="field">
+      <label for="newRoomDesc">説明（任意）</label>
+      <textarea id="newRoomDesc" class="textarea" rows="3" maxlength="120" placeholder="このルームの目的など"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" data-close="createModal">キャンセル</button>
+      <button class="btn primary" id="createRoomBtn">作成する</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== モーダル: 管理ログイン ==================== -->
+<div class="modal-backdrop" id="adminLoginModal">
+  <div class="modal" style="width:min(380px,100%)">
+    <h3>管理者ログイン</h3>
+    <div class="modal-sub">デモ用: パスワードは <b>admin</b></div>
+    <div class="field">
+      <label for="adminPass">パスワード</label>
+      <div class="pw-wrap">
+        <input id="adminPass" class="input" type="password" placeholder="••••••••" />
+        <button class="pw-toggle" data-pw="adminPass" type="button" aria-label="パスワード表示切替">👁</button>
+      </div>
+    </div>
+    <div class="err" id="adminErr"></div>
+    <div class="modal-actions">
+      <button class="btn" data-close="adminLoginModal">キャンセル</button>
+      <button class="btn primary" id="adminLoginBtn">ログイン</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

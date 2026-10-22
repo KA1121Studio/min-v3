@@ -1,0 +1,27 @@
+:root{
+  --bg:#0b0e1a;
+  --bg-2:#0f1322;
+  --panel:#141830;
+  --panel-2:#1a1f3d;
+  --glass:rgba(20,24,48,0.72);
+  --text:#eef1ff;
+  --muted:#9aa3cc;
+  --muted-2:#6b74a3;
+  --accent:#6c8cff;
+  --accent-2:#a46cff;
+  --accent-3:#4cd38a;
+  --danger:#ff5b6e;
+  --warning:#ffd35b;
+  --border:#252a45;
+  --border-2:#2f3761;
+  --bubble:#1c2040;
+  --bubble-self:linear-gradient(135deg,#3a4a9e,#2a356b);
+  --shadow:0 10px 30px rgba(0,0,0,0.45);
+  --shadow-lg:0 24px 60px rgba(0,0,0,0.55);
+  --radius:16px;
+  --radius-sm:10px;
+  --radius-lg:24px;
+  --ease:cubic-bezier(.22,.61,.36,1);
+}
+/* ... 中略（付属HTMLの <style> 内をすべて貼り付け） ... */
+.hidden{display:none !important}
