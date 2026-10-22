@@ -810,7 +810,7 @@ function toggleDetails(force){
   }
 
   /* =====================================================
-     管理画面（デモ・ローカル表示のみ）
+     管理画面
   ===================================================== */
 function openAdminLogin(){
   if(!state.me?.isAdmin){
@@ -930,6 +930,13 @@ async function renderAdmin(){
   }
 }
 
+  function confirmAction(message){
+  return new Promise(resolve => {
+    try { resolve(window.confirm(message)); }
+    catch { resolve(true); }
+  });
+}
+
   /* =====================================================
      イベント登録
   ===================================================== */
@@ -1041,10 +1048,8 @@ el.scrim.addEventListener('click', () => {
 });
   el.scrim.addEventListener('click', closeSidebar);
 
-  el.openAdmin.addEventListener('click', openAdminLogin);
-  el.adminLoginBtn.addEventListener('click', tryEnterAdmin);
-  el.adminPass.addEventListener('keydown', e => { if(e.key === 'Enter') tryEnterAdmin(); });
-  el.adminExit.addEventListener('click', () => switchScreen('appScreen'));
+el.openAdmin.addEventListener('click', openAdminLogin);
+el.adminExit.addEventListener('click', () => switchScreen('appScreen'));
 
 el.clearAll.addEventListener('click', async () => {
   if(!state.me?.isAdmin){ showToast('管理者権限がありません'); return; }
