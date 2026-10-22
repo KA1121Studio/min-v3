@@ -187,3 +187,41 @@ select '全体チャット', 'global', 'すべてのユーザーが参加でき�
 where not exists (
   select 1 from public.rooms where type = 'global'
 );
+-- =====================================================
+-- 5. room_invites（プライベートルームへの招待）
+-- =====================================================
+create table if not exists public.room_invites (
+  id         uuid primary key default gen_random_uuid(),
+  room_id    uuid not null references public.rooms(id) on delete cascade,
+  inviter_id uuid not null references public.profiles(id) on delete cascade,
+  invitee_id uuid not null references public.profiles(id) on delete cascade,
+  status     text not null default 'pending' check (status in ('pending','accepted','declined')),
+  created_at timestamptz not null default now(),
+  unique (room_id, invitee_id)
+);
+
+create index if not exists idx_room_invites_invitee
+  on public.room_invites (invitee_id, status);
+
+alter table public.room_invites enable row level security;
+
+-- 自分宛の招待 or 自分が送った招待を閲覧可
+create policy "room_invites_select"
+  on public.room_invites for select
+  using (auth.uid() = invitee_id or auth.uid() = inviter_id);
+
+-- 自分が参加しているプライベートルームへの招待を作成可
+create policy "room_invites_insert"
+  on public.room_invites for insert
+  with check (
+    auth.uid() = inviter_id
+    and exists (
+      select 1 from public.room_members m
+      where m.room_id = room_invites.room_id and m.user_id = auth.uid()
+    )
+  );
+
+-- 招待された本人のみ承諾/辞退を更新可
+create policy "room_invites_update"
+  on public.room_invites for update
+  using (auth.uid() = invitee_id);
