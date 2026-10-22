@@ -98,6 +98,10 @@
     <div class="logo logo-sm"></div>
     <div class="brand-title-sm">min3 Chat</div>
       <button class="fab" id="fabCreate" title="ルーム作成">＋</button>
+    <button class="icon-btn" id="openInvites" title="招待" style="position:relative">
+  ✉️
+  <span id="inviteBadge" class="badge" style="position:absolute;top:-4px;right:-4px;display:none">0</span>
+</button>
   </div>
 
   <div class="sidebar-search">
@@ -182,6 +186,7 @@
       </div>
       <div class="details-section">
         <h4>アクション</h4>
+         <button class="btn" id="inviteMemberBtn" style="width:100%;margin-bottom:8px">メンバーを招待</button>
         <button class="btn danger" id="leaveRoom" style="width:100%">ルームを退出</button>
       </div>
     </aside>
@@ -286,6 +291,33 @@
     <div class="modal-actions">
       <button class="btn" data-close="adminLoginModal">キャンセル</button>
       <button class="btn primary" id="adminLoginBtn">ログイン</button>
+    </div>
+  </div>
+</div>
+
+  <!-- モーダル: 招待 -->
+<div class="modal-backdrop" id="inviteModal">
+  <div class="modal" style="width:min(420px,100%)">
+    <h3>メンバーを招待</h3>
+    <div class="modal-sub">ユーザー名を入力してください</div>
+    <div class="field">
+      <label for="inviteName">ユーザー名</label>
+      <input id="inviteName" class="input" placeholder="例: 田所浩二" />
+    </div>
+    <div class="err" id="inviteErr"></div>
+    <div class="modal-actions">
+      <button class="btn" data-close="inviteModal">キャンセル</button>
+      <button class="btn primary" id="inviteSendBtn">招待する</button>
+    </div>
+  </div>
+</div>
+
+  <div class="modal-backdrop" id="invitesModal">
+  <div class="modal" style="width:min(480px,100%)">
+    <h3>招待一覧</h3>
+    <div id="invitesList" style="display:flex;flex-direction:column;gap:8px"></div>
+    <div class="modal-actions">
+      <button class="btn" data-close="invitesModal">閉じる</button>
     </div>
   </div>
 </div>
