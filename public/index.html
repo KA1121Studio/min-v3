@@ -322,6 +322,23 @@
   </div>
 </div>
 
+  <!-- モーダル: 通報 -->
+<div class="modal-backdrop" id="reportModal">
+  <div class="modal" style="width:min(420px,100%)">
+    <h3>メッセージを通報</h3>
+    <div class="modal-sub">通報理由を入力してください</div>
+    <div class="field">
+      <label for="reportReason">理由</label>
+      <textarea id="reportReason" class="textarea" rows="3" maxlength="200" placeholder="例: スパム、不適切な発言"></textarea>
+    </div>
+    <div class="err" id="reportErr"></div>
+    <div class="modal-actions">
+      <button class="btn" data-close="reportModal">キャンセル</button>
+      <button class="btn danger" id="reportSendBtn">通報する</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="app.js"></script>
