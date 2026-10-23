@@ -417,7 +417,66 @@ app.get('/api/admin/reports', authRequired, adminRequired, async (req, res) => {
   if (error) return res.status(500).json({ error: '通報取得に失敗しました' });
   return res.json({ reports: data || [] });
 });
+/* =====================================================
+   GET /api/admin/reports/:id
+   通報の詳細（メッセージ本文・投稿者・通報者・ルーム情報）
+===================================================== */
+app.get('/api/admin/reports/:id', authRequired, adminRequired, async (req, res) => {
+  const id = req.params.id;
 
+  const { data, error } = await supabase
+    .from('reports')
+    .select(`
+      id, reason, status, created_at,
+      reporter:reporter_id (id, username, avatar_color),
+      target:target_user (id, username, avatar_color),
+      message:message_id (
+        id, content, created_at, room_id,
+        rooms:room_id (id, name, type, ico)
+      )
+    `)
+    .eq('id', id)
+    .maybeSingle();
+
+  if (error || !data) return res.status(404).json({ error: '通報が見つかりません' });
+
+  // 同じ投稿者に対する過去の通報件数（モデレーション判断の参考）
+  let targetReportCount = 0;
+  if (data.target?.id) {
+    const { count } = await supabase
+      .from('reports')
+      .select('*', { count: 'exact', head: true })
+      .eq('target_user', data.target.id);
+    targetReportCount = count || 0;
+  }
+
+  return res.json({
+    report: {
+      id: data.id,
+      reason: data.reason,
+      status: data.status,
+      createdAt: data.created_at,
+      reporter: data.reporter
+        ? { id: data.reporter.id, username: data.reporter.username, avatarColor: data.reporter.avatar_color }
+        : null,
+      target: data.target
+        ? { id: data.target.id, username: data.target.username, avatarColor: data.target.avatar_color }
+        : null,
+      message: data.message
+        ? {
+            id: data.message.id,
+            content: data.message.content,
+            createdAt: data.message.created_at,
+            roomId: data.message.room_id,
+            roomName: data.message.rooms?.name || '?',
+            roomType: data.message.rooms?.type || '?',
+            roomIco: data.message.rooms?.ico || '💬',
+          }
+        : null,
+    },
+    targetReportCount,
+  });
+});
 /* =====================================================
    POST /api/reports
    body: { messageId, reason }
