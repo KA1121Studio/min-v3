@@ -24,17 +24,19 @@
   ];
   const ADMIN_PASSWORD = 'admin';
 
-  const state = {
-    me: null,          // { id, name, initials, colorIdx }
-    token: null,
-    rooms: [],
-    activeRoomId: null,
-    filter: 'all',
-    search: '',
-    detailsOpen: false,
-    messages: [],      // アクティブルームのメッセージ
-    channel: null,     // Realtime チャンネル
-  };
+const state = {
+  me: null,
+  token: null,
+  rooms: [],
+  activeRoomId: null,
+  filter: 'all',
+  search: '',
+  detailsOpen: false,
+  messages: [],
+  channel: null,
+  presenceChannel: null,       // ← 追加
+  onlineUsers: new Set(),      // ← 追加
+};
 
   const uid = () => Math.random().toString(36).slice(2, 9);
   const now = () => new Date();
@@ -275,6 +277,7 @@ function enterApp(user){
   switchScreen('appScreen');
   loadRooms();
   refreshInvites();
+  subscribePresence();     // ← 追加
 }
 
   async function doLogin(){
@@ -326,6 +329,7 @@ function enterApp(user){
 
   function doLogout(){
     unsubscribeRoom();
+    unsubscribePresence(); 
     clearSession();
     state.rooms = [];
     state.activeRoomId = null;
@@ -662,6 +666,56 @@ function applyReactionChange(messageId, emoji, delta, isMine){
   }
 
   /* =====================================================
+   Presence（オンライン状態）
+===================================================== */
+function subscribePresence(){
+  if(!sb || !state.me) return;
+  if(state.presenceChannel) return; // 二重購読防止
+
+  state.presenceChannel = sb.channel('presence:global', {
+    config: { presence: { key: state.me.id } },
+  });
+
+  state.presenceChannel
+    .on('presence', { event: 'sync' }, () => {
+      const st = state.presenceChannel.presenceState();
+      state.onlineUsers = new Set(
+        Object.values(st).flat().map(p => p.userId)
+      );
+      // メンバー一覧を再描画（表示中なら）
+      const r = activeRoom();
+      if(r && state.detailsOpen) renderDetails(r);
+    })
+    .on('presence', { event: 'join' }, ({ newPresences }) => {
+      newPresences.forEach(p => state.onlineUsers.add(p.userId));
+      const r = activeRoom();
+      if(r && state.detailsOpen) renderDetails(r);
+    })
+    .on('presence', { event: 'leave' }, ({ leftPresences }) => {
+      leftPresences.forEach(p => state.onlineUsers.delete(p.userId));
+      const r = activeRoom();
+      if(r && state.detailsOpen) renderDetails(r);
+    })
+    .subscribe(async (status) => {
+      if(status === 'SUBSCRIBED'){
+        await state.presenceChannel.track({
+          userId: state.me.id,
+          username: state.me.name,
+          onlineAt: new Date().toISOString(),
+        });
+      }
+    });
+}
+
+function unsubscribePresence(){
+  if(state.presenceChannel && sb){
+    state.presenceChannel.untrack();
+    sb.removeChannel(state.presenceChannel);
+  }
+  state.presenceChannel = null;
+  state.onlineUsers = new Set();
+}
+  /* =====================================================
      送信
   ===================================================== */
   function updateSendState(){ el.sendBtn.disabled = !el.composerInput.value.trim(); }
@@ -723,7 +777,7 @@ function applyReactionChange(messageId, emoji, delta, isMine){
   /* =====================================================
      詳細パネル
   ===================================================== */
-  async function renderDetails(r){
+async function renderDetails(r){
   if(!r) return;
   el.detailsDesc.textContent = r.desc || '説明はありません。';
   el.memberList.innerHTML = '<div style="font-size:12px;color:var(--muted-2)">読み込み中...</div>';
@@ -749,7 +803,9 @@ function applyReactionChange(messageId, emoji, delta, isMine){
       nm.textContent = u.name + (u.isMe ? '（あなた）' : '');
 
       const dot = document.createElement('span');
-      dot.className = 'online-dot';
+      const isOnline = u.isMe || state.onlineUsers.has(u.userId);
+      dot.className = isOnline ? 'online-dot' : 'offline-dot';
+      dot.title = isOnline ? 'オンライン' : 'オフライン';
 
       row.append(av, nm, dot);
       el.memberList.appendChild(row);
