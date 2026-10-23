@@ -140,6 +140,10 @@ const state = {
     reportDetailBody: $('reportDetailBody'),
     reportDetailResolve: $('reportDetailResolve'),
     reportDetailDismiss: $('reportDetailDismiss'),
+
+    adminAdminList: $('adminAdminList'),
+    promoteUsername: $('promoteUsername'),
+    promoteBtn: $('promoteBtn'),
   };
 
   let selectedAvatar = 0;
@@ -219,6 +223,31 @@ el.reportDetailDismiss.addEventListener('click', async () => {
     showToast('却下しました');
     renderAdmin();
   } catch (e) { showToast(e.message); }
+});
+
+ el.promoteBtn.addEventListener('click', async () => {
+  const username = el.promoteUsername.value.trim();
+  if(!username){ showToast('ユーザー名を入力してください'); return; }
+
+  el.promoteBtn.disabled = true;
+  try {
+    // 全ユーザーから該当ユーザーを検索
+    const { users } = await api('/api/admin/users');
+    const target = users.find(u => u.username.toLowerCase() === username.toLowerCase());
+    if(!target){ showToast('ユーザーが見つかりません'); return; }
+    if(target.is_admin){ showToast('既に管理者です'); return; }
+
+    await api(`/api/admin/users/${target.id}`, {
+      method: 'PATCH', body: { is_admin: true },
+    });
+    el.promoteUsername.value = '';
+    showToast(`${target.username} を管理者に追加しました`);
+    renderAdmin();
+  } catch (e) {
+    showToast(e.message);
+  } finally {
+    el.promoteBtn.disabled = false;
+  }
 });
 
   /* =====================================================
@@ -1055,6 +1084,43 @@ reports.forEach(rp => {
   }
 }
 
+  // 管理者一覧
+el.adminAdminList.innerHTML = '<div class="table-row"><div class="grow">読み込み中...</div></div>';
+try {
+  const { admins } = await api('/api/admin/admins');
+  el.adminAdminList.innerHTML = '';
+  if(!admins.length){
+    el.adminAdminList.innerHTML = '<div class="table-row"><div class="grow">管理者がいません</div></div>';
+  } else {
+    admins.forEach(u => {
+      const row = document.createElement('div');
+      row.className = 'table-row';
+      const nm = document.createElement('div');
+      nm.className = 'grow';
+      nm.innerHTML = `<b>${u.username}</b>${u.isProtected ? ' 🔒' : ''}`;
+      const st = document.createElement('span');
+      st.className = 'pill ok';
+      st.textContent = '管理者';
+      const del = document.createElement('button');
+      del.className = 'btn ghost';
+      del.textContent = u.isProtected ? '保護中' : '剥奪';
+      del.disabled = u.isProtected;
+      del.addEventListener('click', async () => {
+        try {
+          await api(`/api/admin/users/${u.id}`, {
+            method: 'PATCH', body: { is_admin: false },
+          });
+          showToast(`${u.username} の管理者権限を剥奪しました`);
+          renderAdmin();
+        } catch (e) { showToast(e.message); }
+      });
+      row.append(nm, st, del);
+      el.adminAdminList.appendChild(row);
+    });
+  }
+} catch (e) {
+  el.adminAdminList.innerHTML = `<div class="table-row"><div class="grow">${e.message}</div></div>`;
+}
   let currentReportId = null;
 
 async function openReportDetail(reportId){
