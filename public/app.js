@@ -136,6 +136,10 @@ const state = {
     reportReason: $('reportReason'),
     reportErr: $('reportErr'),
     reportSendBtn: $('reportSendBtn'),
+    reportDetailModal: $('reportDetailModal'),
+    reportDetailBody: $('reportDetailBody'),
+    reportDetailResolve: $('reportDetailResolve'),
+    reportDetailDismiss: $('reportDetailDismiss'),
   };
 
   let selectedAvatar = 0;
@@ -191,6 +195,30 @@ el.inviteSendBtn.addEventListener('click', async () => {
   } finally {
     el.reportSendBtn.disabled = false;
   }
+});
+
+  el.reportDetailResolve.addEventListener('click', async () => {
+  if(!currentReportId) return;
+  try {
+    await api(`/api/admin/reports/${currentReportId}`, {
+      method: 'PATCH', body: { status: 'resolved' },
+    });
+    closeModal('reportDetailModal');
+    showToast('解決済みにしました');
+    renderAdmin();
+  } catch (e) { showToast(e.message); }
+});
+
+el.reportDetailDismiss.addEventListener('click', async () => {
+  if(!currentReportId) return;
+  try {
+    await api(`/api/admin/reports/${currentReportId}`, {
+      method: 'PATCH', body: { status: 'dismissed' },
+    });
+    closeModal('reportDetailModal');
+    showToast('却下しました');
+    renderAdmin();
+  } catch (e) { showToast(e.message); }
 });
 
   /* =====================================================
@@ -1004,34 +1032,149 @@ async function renderAdmin(){
     if(!reports.length){
       el.adminReports.innerHTML = '<div class="table-row"><div class="grow">通報はありません</div></div>';
     } else {
-      reports.forEach(rp => {
-        const row = document.createElement('div');
-        row.className = 'table-row';
-        const txt = document.createElement('div');
-        txt.className = 'grow';
-        txt.textContent = `${rp.reporter?.username || '?'} → ${rp.target?.username || '?'} : ${rp.reason}`;
-        const st = document.createElement('span');
-        st.className = 'pill ' + (rp.status === 'open' ? 'danger' : 'ok');
-        st.textContent = rp.status === 'open' ? '要対応' : rp.status === 'resolved' ? '解決済み' : '却下';
-        const res = document.createElement('button');
-        res.className = 'btn ghost';
-        res.textContent = '解決';
-        res.disabled = rp.status !== 'open';
-        res.addEventListener('click', async () => {
-          try {
-            await api(`/api/admin/reports/${rp.id}`, { method: 'PATCH', body: { status: 'resolved' } });
-            renderAdmin();
-          } catch (e) { showToast(e.message); }
-        });
-        row.append(txt, st, res);
-        el.adminReports.appendChild(row);
-      });
+reports.forEach(rp => {
+  const row = document.createElement('div');
+  row.className = 'table-row';
+  row.style.cursor = 'pointer';
+
+  const txt = document.createElement('div');
+  txt.className = 'grow';
+  txt.innerHTML = `<b>${rp.reporter?.username || '?'}</b> → <b>${rp.target?.username || '?'}</b><div style="font-size:11px;color:var(--muted)">${rp.reason}</div>`;
+
+  const st = document.createElement('span');
+  st.className = 'pill ' + (rp.status === 'open' ? 'danger' : 'ok');
+  st.textContent = rp.status === 'open' ? '要対応' : rp.status === 'resolved' ? '解決済み' : '却下';
+
+  row.append(txt, st);
+  row.addEventListener('click', () => openReportDetail(rp.id));
+  el.adminReports.appendChild(row);
+});
     }
   } catch (e) {
     el.adminReports.innerHTML = `<div class="table-row"><div class="grow">${e.message}</div></div>`;
   }
 }
 
+  let currentReportId = null;
+
+async function openReportDetail(reportId){
+  currentReportId = reportId;
+  el.reportDetailBody.innerHTML = '<div style="font-size:13px;color:var(--muted)">読み込み中...</div>';
+  openModal('reportDetailModal');
+
+  try {
+    const { report, targetReportCount } = await api(`/api/admin/reports/${reportId}`);
+    renderReportDetail(report, targetReportCount);
+  } catch (e) {
+    el.reportDetailBody.innerHTML = `<div style="font-size:13px;color:var(--danger)">${e.message}</div>`;
+  }
+}
+
+function renderReportDetail(r, targetReportCount){
+  const body = el.reportDetailBody;
+  body.innerHTML = '';
+
+  // ステータスバッジ
+  const statusRow = document.createElement('div');
+  const statusPill = document.createElement('span');
+  statusPill.className = 'pill ' + (r.status === 'open' ? 'danger' : 'ok');
+  statusPill.textContent = r.status === 'open' ? '要対応' : r.status === 'resolved' ? '解決済み' : '却下';
+  statusRow.appendChild(statusPill);
+  body.appendChild(statusRow);
+
+  // 通報されたメッセージ
+  if(r.message){
+    const sec = document.createElement('div');
+    sec.className = 'details-section';
+    sec.style.borderRadius = '12px';
+    sec.style.background = 'var(--bg-2)';
+    sec.style.border = '1px solid var(--border)';
+
+    const h = document.createElement('h4');
+    h.textContent = '通報されたメッセージ';
+    sec.appendChild(h);
+
+    const room = document.createElement('div');
+    room.style.fontSize = '12px';
+    room.style.color = 'var(--muted)';
+    room.style.marginBottom = '8px';
+    room.textContent = `${r.message.roomIco} ${r.message.roomName}（${r.message.roomType === 'global' ? '全体' : r.message.roomType === 'open' ? 'オープン' : 'プライベート'}）`;
+    sec.appendChild(room);
+
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    bubble.style.marginBottom = '6px';
+    bubble.textContent = r.message.content;
+    sec.appendChild(bubble);
+
+    const time = document.createElement('div');
+    time.style.fontSize = '11px';
+    time.style.color = 'var(--muted-2)';
+    time.textContent = `投稿日時: ${new Date(r.message.createdAt).toLocaleString('ja-JP')}`;
+    sec.appendChild(time);
+
+    body.appendChild(sec);
+  }
+
+  // 投稿者情報
+  if(r.target){
+    const sec = document.createElement('div');
+    sec.className = 'member-row';
+    const av = document.createElement('div');
+    av.className = 'avatar sm';
+    av.textContent = (r.target.username || '?').slice(0,2).toUpperCase();
+    av.style.background = colorOf(r.target.avatarColor);
+    const nm = document.createElement('div');
+    nm.className = 'name';
+    nm.innerHTML = `<b>${r.target.username}</b><div style="font-size:11px;color:var(--muted)">投稿者・過去の通報 ${targetReportCount} 件</div>`;
+    sec.append(av, nm);
+    body.appendChild(sec);
+  }
+
+  // 通報者情報
+  if(r.reporter){
+    const sec = document.createElement('div');
+    sec.className = 'member-row';
+    const av = document.createElement('div');
+    av.className = 'avatar sm';
+    av.textContent = (r.reporter.username || '?').slice(0,2).toUpperCase();
+    av.style.background = colorOf(r.reporter.avatarColor);
+    const nm = document.createElement('div');
+    nm.className = 'name';
+    nm.innerHTML = `<b>${r.reporter.username}</b><div style="font-size:11px;color:var(--muted)">通報者</div>`;
+    sec.append(av, nm);
+    body.appendChild(sec);
+  }
+
+  // 通報理由
+  const reasonSec = document.createElement('div');
+  const rh = document.createElement('h4');
+  rh.textContent = '通報理由';
+  rh.style.margin = '0 0 8px';
+  rh.style.fontSize = '11px';
+  rh.style.letterSpacing = '.8px';
+  rh.style.textTransform = 'uppercase';
+  rh.style.color = 'var(--muted-2)';
+  const reasonText = document.createElement('div');
+  reasonText.style.fontSize = '13px';
+  reasonText.style.lineHeight = '1.6';
+  reasonText.textContent = r.reason;
+  reasonSec.append(rh, reasonText);
+  body.appendChild(reasonSec);
+
+  // 通報日時
+  const created = document.createElement('div');
+  created.style.fontSize = '11px';
+  created.style.color = 'var(--muted-2)';
+  created.textContent = `通報日時: ${new Date(r.createdAt).toLocaleString('ja-JP')}`;
+  body.appendChild(created);
+
+  // ボタンの有効/無効
+  const isOpen = r.status === 'open';
+  el.reportDetailResolve.disabled = !isOpen;
+  el.reportDetailDismiss.disabled = !isOpen;
+}
+  
   function confirmAction(message){
   return new Promise(resolve => {
     try { resolve(window.confirm(message)); }
