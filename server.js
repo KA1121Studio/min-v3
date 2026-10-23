@@ -419,6 +419,49 @@ app.get('/api/admin/reports', authRequired, adminRequired, async (req, res) => {
 });
 
 /* =====================================================
+   POST /api/reports
+   body: { messageId, reason }
+   メッセージを通報
+===================================================== */
+app.post('/api/reports', authRequired, async (req, res) => {
+  const { messageId, reason } = req.body || {};
+  if (!messageId) return res.status(400).json({ error: 'messageId が必要です' });
+  if (!reason || reason.length > 200)
+    return res.status(400).json({ error: '理由は1〜200文字です' });
+
+  // メッセージの存在確認 + 投稿者取得
+  const { data: msg } = await supabase
+    .from('messages')
+    .select('id, room_id, user_id')
+    .eq('id', messageId)
+    .maybeSingle();
+  if (!msg) return res.status(404).json({ error: 'メッセージが見つかりません' });
+
+  // 自分のメッセージは通報できない
+  if (msg.user_id === req.user.sub)
+    return res.status(400).json({ error: '自分のメッセージは通報できません' });
+
+  // 同じメッセージを二重通報しない
+  const { data: existing } = await supabase
+    .from('reports')
+    .select('id')
+    .eq('reporter_id', req.user.sub)
+    .eq('message_id', messageId)
+    .maybeSingle();
+  if (existing) return res.status(400).json({ error: '既に通報済みです' });
+
+  const { error } = await supabase.from('reports').insert({
+    reporter_id: req.user.sub,
+    message_id: messageId,
+    target_user: msg.user_id,
+    reason,
+  });
+
+  if (error) return res.status(500).json({ error: '通報に失敗しました' });
+  return res.json({ ok: true });
+});
+
+/* =====================================================
    PATCH /api/admin/reports/:id  body: { status }
 ===================================================== */
 app.patch('/api/admin/reports/:id', authRequired, adminRequired, async (req, res) => {
