@@ -4,12 +4,10 @@
   /* =====================================================
      設定
   ===================================================== */
-  // Render 同一オリジンなので相対パス。Supabase は Realtime 購読のみに使用。
   const API_BASE = '';
-  const SUPABASE_URL = window.__SUPABASE_URL__ || '';       // index.html で注入
+  const SUPABASE_URL = window.__SUPABASE_URL__ || '';
   const SUPABASE_ANON_KEY = window.__SUPABASE_ANON_KEY__ || '';
 
-  // supabase-js は index.html で CDN 読み込み済み（window.supabase）
   const sb = (SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase)
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
     : null;
@@ -22,22 +20,25 @@
     'linear-gradient(135deg,#4a8fd0,#4ad0d3)',
     'linear-gradient(135deg,#8a4ad0,#c04ad0)',
   ];
-  const ADMIN_PASSWORD = 'admin';
 
-const state = {
-  me: null,
-  token: null,
-  rooms: [],
-  activeRoomId: null,
-  filter: 'all',
-  search: '',
-  detailsOpen: false,
-  messages: [],
-  channel: null,
-  presenceChannel: null,       // ← 追加
-  onlineUsers: new Set(),      // ← 追加
-  reportTarget: null,   // 通報対象のメッセージ
-};
+  const state = {
+    me: null,
+    token: null,
+    rooms: [],
+    activeRoomId: null,
+    filter: 'all',
+    search: '',
+    detailsOpen: false,
+    messages: [],
+    channel: null,
+    presenceChannel: null,
+    onlineUsers: new Set(),
+    reportTarget: null,
+  };
+
+  let currentReportId = null;
+  let selectedAvatar = 0;
+  let createType = 'open';
 
   const uid = () => Math.random().toString(36).slice(2, 9);
   const now = () => new Date();
@@ -105,10 +106,6 @@ const state = {
     newRoomDesc: $('newRoomDesc'),
     createRoomBtn: $('createRoomBtn'),
 
-    adminLoginModal: $('adminLoginModal'),
-    adminPass: $('adminPass'),
-    adminErr: $('adminErr'),
-    adminLoginBtn: $('adminLoginBtn'),
     adminExit: $('adminExit'),
     statUsers: $('statUsers'),
     statRooms: $('statRooms'),
@@ -117,6 +114,9 @@ const state = {
     adminUserList: $('adminUserList'),
     adminReports: $('adminReports'),
     clearAll: $('clearAll'),
+    adminAdminList: $('adminAdminList'),
+    promoteUsername: $('promoteUsername'),
+    promoteBtn: $('promoteBtn'),
 
     toast: $('toast'),
     leaveModal: $('leaveModal'),
@@ -129,9 +129,10 @@ const state = {
     inviteSendBtn: $('inviteSendBtn'),
     inviteMemberBtn: $('inviteMemberBtn'),
     openInvites: $('openInvites'),
-    inviteBadge: $('inviteBadge'),    
+    inviteBadge: $('inviteBadge'),
     invitesModal: $('invitesModal'),
     invitesList: $('invitesList'),
+
     reportModal: $('reportModal'),
     reportReason: $('reportReason'),
     reportErr: $('reportErr'),
@@ -140,115 +141,7 @@ const state = {
     reportDetailBody: $('reportDetailBody'),
     reportDetailResolve: $('reportDetailResolve'),
     reportDetailDismiss: $('reportDetailDismiss'),
-
-    adminAdminList: $('adminAdminList'),
-    promoteUsername: $('promoteUsername'),
-    promoteBtn: $('promoteBtn'),
   };
-
-  let selectedAvatar = 0;
-  let createType = 'open';
-
-  el.inviteMemberBtn.addEventListener('click', () => {
-  const r = activeRoom();
-  if(!r){ return; }
-  if(r.type !== 'private'){ showToast('プライベートルームのみ招待できます'); return; }
-  el.inviteName.value = '';
-  setErr(el.inviteErr, '');
-  openModal('inviteModal');
-  setTimeout(() => el.inviteName.focus(), 50);
-});
-
-el.inviteSendBtn.addEventListener('click', async () => {
-  const r = activeRoom();
-  const name = el.inviteName.value.trim();
-  setErr(el.inviteErr, '');
-  if(!name){ setErr(el.inviteErr, 'ユーザー名を入力してください'); return; }
-
-  el.inviteSendBtn.disabled = true;
-  try {
-    const { invitee } = await api(`/api/rooms/${r.id}/invites`, {
-      method: 'POST', body: { username: name },
-    });
-    closeModal('inviteModal');
-    showToast(`${invitee} さんを招待しました`);
-  } catch (e) {
-    setErr(el.inviteErr, e.message);
-  } finally {
-    el.inviteSendBtn.disabled = false;
-  }
-});
-
-  el.reportSendBtn.addEventListener('click', async () => {
-  const m = state.reportTarget;
-  const reason = el.reportReason.value.trim();
-  setErr(el.reportErr, '');
-  if(!m){ closeModal('reportModal'); return; }
-  if(!reason){ setErr(el.reportErr, '理由を入力してください'); return; }
-
-  el.reportSendBtn.disabled = true;
-  try {
-    await api('/api/reports', {
-      method: 'POST',
-      body: { messageId: m.id, reason },
-    });
-    closeModal('reportModal');
-    showToast('通報しました');
-  } catch (e) {
-    setErr(el.reportErr, e.message);
-  } finally {
-    el.reportSendBtn.disabled = false;
-  }
-});
-
-  el.reportDetailResolve.addEventListener('click', async () => {
-  if(!currentReportId) return;
-  try {
-    await api(`/api/admin/reports/${currentReportId}`, {
-      method: 'PATCH', body: { status: 'resolved' },
-    });
-    closeModal('reportDetailModal');
-    showToast('解決済みにしました');
-    renderAdmin();
-  } catch (e) { showToast(e.message); }
-});
-
-el.reportDetailDismiss.addEventListener('click', async () => {
-  if(!currentReportId) return;
-  try {
-    await api(`/api/admin/reports/${currentReportId}`, {
-      method: 'PATCH', body: { status: 'dismissed' },
-    });
-    closeModal('reportDetailModal');
-    showToast('却下しました');
-    renderAdmin();
-  } catch (e) { showToast(e.message); }
-});
-
- el.promoteBtn.addEventListener('click', async () => {
-  const username = el.promoteUsername.value.trim();
-  if(!username){ showToast('ユーザー名を入力してください'); return; }
-
-  el.promoteBtn.disabled = true;
-  try {
-    // 全ユーザーから該当ユーザーを検索
-    const { users } = await api('/api/admin/users');
-    const target = users.find(u => u.username.toLowerCase() === username.toLowerCase());
-    if(!target){ showToast('ユーザーが見つかりません'); return; }
-    if(target.is_admin){ showToast('既に管理者です'); return; }
-
-    await api(`/api/admin/users/${target.id}`, {
-      method: 'PATCH', body: { is_admin: true },
-    });
-    el.promoteUsername.value = '';
-    showToast(`${target.username} を管理者に追加しました`);
-    renderAdmin();
-  } catch (e) {
-    showToast(e.message);
-  } finally {
-    el.promoteBtn.disabled = false;
-  }
-});
 
   /* =====================================================
      共通ユーティリティ
@@ -266,6 +159,12 @@ el.reportDetailDismiss.addEventListener('click', async () => {
   function openModal(id){ $(id).classList.add('show'); }
   function closeModal(id){ $(id).classList.remove('show'); }
   function setErr(node, msg){ node.textContent = msg || ''; }
+  function confirmAction(message){
+    return new Promise(resolve => {
+      try { resolve(window.confirm(message)); }
+      catch { resolve(true); }
+    });
+  }
 
   /* =====================================================
      API ラッパー
@@ -284,7 +183,7 @@ el.reportDetailDismiss.addEventListener('click', async () => {
   }
 
   /* =====================================================
-     セッション（JWT + ユーザー情報）
+     セッション
   ===================================================== */
   const TOKEN_KEY = 'min3_token';
   const USER_KEY  = 'min3_user';
@@ -347,22 +246,22 @@ el.reportDetailDismiss.addEventListener('click', async () => {
     });
   }
 
-function enterApp(user){
-  state.me = {
-    id: user.id,
-    name: user.username,
-    initials: user.username.slice(0,2).toUpperCase(),
-    colorIdx: user.avatarColor ?? 0,
-    isAdmin: !!user.isAdmin,
-  };
-  el.meName.textContent = state.me.name;
-  el.meAvatar.textContent = state.me.initials;
-  el.meAvatar.style.background = colorOf(state.me.colorIdx);
-  switchScreen('appScreen');
-  loadRooms();
-  refreshInvites();
-  subscribePresence();     // ← 追加
-}
+  function enterApp(user){
+    state.me = {
+      id: user.id,
+      name: user.username,
+      initials: user.username.slice(0,2).toUpperCase(),
+      colorIdx: user.avatarColor ?? 0,
+      isAdmin: !!user.isAdmin,
+    };
+    el.meName.textContent = state.me.name;
+    el.meAvatar.textContent = state.me.initials;
+    el.meAvatar.style.background = colorOf(state.me.colorIdx);
+    switchScreen('appScreen');
+    loadRooms();
+    refreshInvites();
+    subscribePresence();
+  }
 
   async function doLogin(){
     const name = el.loginName.value.trim();
@@ -392,7 +291,7 @@ function enterApp(user){
 
     if(!name){ setErr(el.signupErr, 'ユーザー名を入力してください'); return; }
     if(name.length > 24){ setErr(el.signupErr, 'ユーザー名は24文字以内です'); return; }
-    if(!pass || pass.length < 4){ setErr(el.signupErr, 'パスワードは4文字以上で設定してください'); return; }
+    if(!pass || pass.length < 6){ setErr(el.signupErr, 'パスワードは6文字以上で設定してください'); return; }
     if(pass !== pass2){ setErr(el.signupErr, 'パスワードが一致しません'); return; }
 
     el.signupBtn.disabled = true;
@@ -413,7 +312,7 @@ function enterApp(user){
 
   function doLogout(){
     unsubscribeRoom();
-    unsubscribePresence(); 
+    unsubscribePresence();
     clearSession();
     state.rooms = [];
     state.activeRoomId = null;
@@ -610,39 +509,37 @@ function enterApp(user){
     tail.appendChild(bubble);
 
     const actions = document.createElement('div');
-actions.className = 'msg-actions';
-['👍','❤️','😂','😮'].forEach(rx => {
-  const b = document.createElement('button');
-  b.className = 'react-btn';
-  b.textContent = rx;
-  b.addEventListener('click', () => toggleReaction(m, rx, false));
-  actions.appendChild(b);
-});
+    actions.className = 'msg-actions';
+    ['👍','❤️','😂','😮'].forEach(rx => {
+      const b = document.createElement('button');
+      b.className = 'react-btn';
+      b.textContent = rx;
+      b.addEventListener('click', () => toggleReaction(m, rx, false));
+      actions.appendChild(b);
+    });
 
-// 自分のメッセージ以外は通報ボタンを追加
-if(!m.mine){
-  const reportBtn = document.createElement('button');
-  reportBtn.className = 'react-btn';
-  reportBtn.textContent = '🚩';
-  reportBtn.title = '通報';
-  reportBtn.addEventListener('click', () => openReportModal(m));
-  actions.appendChild(reportBtn);
-}
+    if(!m.mine){
+      const reportBtn = document.createElement('button');
+      reportBtn.className = 'react-btn';
+      reportBtn.textContent = '🚩';
+      reportBtn.title = '通報';
+      reportBtn.addEventListener('click', () => openReportModal(m));
+      actions.appendChild(reportBtn);
+    }
+    tail.appendChild(actions);
 
-tail.appendChild(actions);
-
-if(m.reactions && Object.keys(m.reactions).length){
-  const bar = document.createElement('div');
-  bar.className = 'reactions';
-  Object.entries(m.reactions).forEach(([rx, obj]) => {
-    const chip = document.createElement('button');
-    chip.className = 'react-chip' + (obj.mine ? ' mine' : '');
-    chip.textContent = `${rx} ${obj.count}`;
-    chip.addEventListener('click', () => toggleReaction(m, rx, obj.mine));
-    bar.appendChild(chip);
-  });
-  tail.appendChild(bar);
-}
+    if(m.reactions && Object.keys(m.reactions).length){
+      const bar = document.createElement('div');
+      bar.className = 'reactions';
+      Object.entries(m.reactions).forEach(([rx, obj]) => {
+        const chip = document.createElement('button');
+        chip.className = 'react-chip' + (obj.mine ? ' mine' : '');
+        chip.textContent = `${rx} ${obj.count}`;
+        chip.addEventListener('click', () => toggleReaction(m, rx, obj.mine));
+        bar.appendChild(chip);
+      });
+      tail.appendChild(bar);
+    }
 
     col.append(meta, tail);
 
@@ -657,26 +554,25 @@ if(m.reactions && Object.keys(m.reactions).length){
     return wrap;
   }
 
-async function toggleReaction(m, rx, isMine){
-  try {
-    if(isMine){
-      await api(`/api/messages/${m.id}/reactions`, { method: 'DELETE', body: { emoji: rx } });
-    } else {
-      await api(`/api/messages/${m.id}/reactions`, { method: 'POST', body: { emoji: rx } });
+  async function toggleReaction(m, rx, isMine){
+    try {
+      if(isMine){
+        await api(`/api/messages/${m.id}/reactions`, { method: 'DELETE', body: { emoji: rx } });
+      } else {
+        await api(`/api/messages/${m.id}/reactions`, { method: 'POST', body: { emoji: rx } });
+      }
+    } catch (e) {
+      showToast(e.message);
     }
-    // 反映はRealtime購読に任せる（即時性のため楽観的更新を入れてもよい）
-  } catch (e) {
-    showToast(e.message);
   }
-}
 
   function openReportModal(m){
-  state.reportTarget = m;
-  el.reportReason.value = '';
-  setErr(el.reportErr, '');
-  openModal('reportModal');
-  setTimeout(() => el.reportReason.focus(), 50);
-}
+    state.reportTarget = m;
+    el.reportReason.value = '';
+    setErr(el.reportErr, '');
+    openModal('reportModal');
+    setTimeout(() => el.reportReason.focus(), 50);
+  }
 
   /* =====================================================
      Realtime 購読（Supabase）
@@ -688,77 +584,73 @@ async function toggleReaction(m, rx, isMine){
     state.channel = null;
   }
 
-function subscribeRoom(roomId){
-  unsubscribeRoom();
-  if(!sb) return;
+  function subscribeRoom(roomId){
+    unsubscribeRoom();
+    if(!sb) return;
 
-  state.channel = sb
-    .channel(`room:${roomId}`)
-    // メッセージ追加
-    .on('postgres_changes', {
-      event: 'INSERT',
-      schema: 'public',
-      table: 'messages',
-      filter: `room_id=eq.${roomId}`,
-    }, payload => {
-      const row = payload.new;
-      if(row.user_id === state.me.id) return;
-      if(state.messages.some(m => m.id === row.id)) return;
+    state.channel = sb
+      .channel(`room:${roomId}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'messages',
+        filter: `room_id=eq.${roomId}`,
+      }, payload => {
+        const row = payload.new;
+        if(row.user_id === state.me.id) return;
+        if(state.messages.some(m => m.id === row.id)) return;
 
-      state.messages.push({
-        id: row.id,
-        userId: row.user_id,
-        name: '...',
-        initials: '?',
-        colorIdx: 0,
-        text: row.content,
-        time: timeStr(row.created_at),
-        createdAt: row.created_at,
-        mine: false,
-        reactions: {},
-        readBy: [],
-      });
-      renderMessages();
-      refreshMessagesSoon(roomId);
-    })
-    // リアクション追加
-    .on('postgres_changes', {
-      event: 'INSERT',
-      schema: 'public',
-      table: 'reactions',
-    }, payload => {
-      applyReactionChange(payload.new.message_id, payload.new.emoji, +1, payload.new.user_id === state.me.id);
-    })
-    // リアクション削除
-    .on('postgres_changes', {
-      event: 'DELETE',
-      schema: 'public',
-      table: 'reactions',
-    }, payload => {
-      const old = payload.old;
-      if(!old || !old.message_id) return;
-      applyReactionChange(old.message_id, old.emoji, -1, old.user_id === state.me.id);
-    })
-    .subscribe();
-}
-
-/* ローカルのメッセージ配列にリアクション増減を反映 */
-function applyReactionChange(messageId, emoji, delta, isMine){
-  const msg = state.messages.find(m => m.id === messageId);
-  if(!msg) return;                       // 表示中のルームに無いメッセージは無視
-  msg.reactions = msg.reactions || {};
-  const cur = msg.reactions[emoji] || { count: 0, mine: false };
-  const next = {
-    count: Math.max(0, cur.count + delta),
-    mine: isMine ? (delta > 0) : cur.mine,
-  };
-  if(next.count === 0){
-    delete msg.reactions[emoji];
-  } else {
-    msg.reactions[emoji] = next;
+        state.messages.push({
+          id: row.id,
+          userId: row.user_id,
+          name: '...',
+          initials: '?',
+          colorIdx: 0,
+          text: row.content,
+          time: timeStr(row.created_at),
+          createdAt: row.created_at,
+          mine: false,
+          reactions: {},
+          readBy: [],
+        });
+        renderMessages();
+        refreshMessagesSoon(roomId);
+      })
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'reactions',
+      }, payload => {
+        applyReactionChange(payload.new.message_id, payload.new.emoji, +1, payload.new.user_id === state.me.id);
+      })
+      .on('postgres_changes', {
+        event: 'DELETE',
+        schema: 'public',
+        table: 'reactions',
+      }, payload => {
+        const old = payload.old;
+        if(!old || !old.message_id) return;
+        applyReactionChange(old.message_id, old.emoji, -1, old.user_id === state.me.id);
+      })
+      .subscribe();
   }
-  renderMessages();
-}
+
+  function applyReactionChange(messageId, emoji, delta, isMine){
+    const msg = state.messages.find(m => m.id === messageId);
+    if(!msg) return;
+    msg.reactions = msg.reactions || {};
+    const cur = msg.reactions[emoji] || { count: 0, mine: false };
+    const next = {
+      count: Math.max(0, cur.count + delta),
+      mine: isMine ? (delta > 0) : cur.mine,
+    };
+    if(next.count === 0){
+      delete msg.reactions[emoji];
+    } else {
+      msg.reactions[emoji] = next;
+    }
+    renderMessages();
+  }
 
   let refreshTimer = null;
   function refreshMessagesSoon(roomId){
@@ -769,55 +661,55 @@ function applyReactionChange(messageId, emoji, delta, isMine){
   }
 
   /* =====================================================
-   Presence（オンライン状態）
-===================================================== */
-function subscribePresence(){
-  if(!sb || !state.me) return;
-  if(state.presenceChannel) return; // 二重購読防止
+     Presence
+  ===================================================== */
+  function subscribePresence(){
+    if(!sb || !state.me) return;
+    if(state.presenceChannel) return;
 
-  state.presenceChannel = sb.channel('presence:global', {
-    config: { presence: { key: state.me.id } },
-  });
-
-  state.presenceChannel
-    .on('presence', { event: 'sync' }, () => {
-      const st = state.presenceChannel.presenceState();
-      state.onlineUsers = new Set(
-        Object.values(st).flat().map(p => p.userId)
-      );
-      // メンバー一覧を再描画（表示中なら）
-      const r = activeRoom();
-      if(r && state.detailsOpen) renderDetails(r);
-    })
-    .on('presence', { event: 'join' }, ({ newPresences }) => {
-      newPresences.forEach(p => state.onlineUsers.add(p.userId));
-      const r = activeRoom();
-      if(r && state.detailsOpen) renderDetails(r);
-    })
-    .on('presence', { event: 'leave' }, ({ leftPresences }) => {
-      leftPresences.forEach(p => state.onlineUsers.delete(p.userId));
-      const r = activeRoom();
-      if(r && state.detailsOpen) renderDetails(r);
-    })
-    .subscribe(async (status) => {
-      if(status === 'SUBSCRIBED'){
-        await state.presenceChannel.track({
-          userId: state.me.id,
-          username: state.me.name,
-          onlineAt: new Date().toISOString(),
-        });
-      }
+    state.presenceChannel = sb.channel('presence:global', {
+      config: { presence: { key: state.me.id } },
     });
-}
 
-function unsubscribePresence(){
-  if(state.presenceChannel && sb){
-    state.presenceChannel.untrack();
-    sb.removeChannel(state.presenceChannel);
+    state.presenceChannel
+      .on('presence', { event: 'sync' }, () => {
+        const st = state.presenceChannel.presenceState();
+        state.onlineUsers = new Set(
+          Object.values(st).flat().map(p => p.userId)
+        );
+        const r = activeRoom();
+        if(r && state.detailsOpen) renderDetails(r);
+      })
+      .on('presence', { event: 'join' }, ({ newPresences }) => {
+        newPresences.forEach(p => state.onlineUsers.add(p.userId));
+        const r = activeRoom();
+        if(r && state.detailsOpen) renderDetails(r);
+      })
+      .on('presence', { event: 'leave' }, ({ leftPresences }) => {
+        leftPresences.forEach(p => state.onlineUsers.delete(p.userId));
+        const r = activeRoom();
+        if(r && state.detailsOpen) renderDetails(r);
+      })
+      .subscribe(async (status) => {
+        if(status === 'SUBSCRIBED'){
+          await state.presenceChannel.track({
+            userId: state.me.id,
+            username: state.me.name,
+            onlineAt: new Date().toISOString(),
+          });
+        }
+      });
   }
-  state.presenceChannel = null;
-  state.onlineUsers = new Set();
-}
+
+  function unsubscribePresence(){
+    if(state.presenceChannel && sb){
+      state.presenceChannel.untrack();
+      sb.removeChannel(state.presenceChannel);
+    }
+    state.presenceChannel = null;
+    state.onlineUsers = new Set();
+  }
+
   /* =====================================================
      送信
   ===================================================== */
@@ -834,7 +726,6 @@ function unsubscribePresence(){
     const r = activeRoom();
     if(!r) return;
 
-    // 楽観的更新
     const temp = {
       id: 'tmp-' + uid(),
       userId: state.me.id,
@@ -859,7 +750,6 @@ function unsubscribePresence(){
         method: 'POST',
         body: { roomId: r.id, content: text },
       });
-      // 仮IDを本IDに差し替え
       const idx = state.messages.findIndex(m => m.id === temp.id);
       if(idx >= 0){
         state.messages[idx] = {
@@ -870,7 +760,6 @@ function unsubscribePresence(){
       }
       renderRoomList();
     } catch (e) {
-      // 失敗したら仮メッセージを除去
       state.messages = state.messages.filter(m => m.id !== temp.id);
       renderMessages();
       showToast(e.message);
@@ -880,52 +769,52 @@ function unsubscribePresence(){
   /* =====================================================
      詳細パネル
   ===================================================== */
-async function renderDetails(r){
-  if(!r) return;
-  el.detailsDesc.textContent = r.desc || '説明はありません。';
-  el.memberList.innerHTML = '<div style="font-size:12px;color:var(--muted-2)">読み込み中...</div>';
+  async function renderDetails(r){
+    if(!r) return;
+    el.detailsDesc.textContent = r.desc || '説明はありません。';
+    el.memberList.innerHTML = '<div style="font-size:12px;color:var(--muted-2)">読み込み中...</div>';
 
-  try {
-    const { members } = await api(`/api/rooms/${r.id}/members`);
-    el.memberList.innerHTML = '';
-    if(!members.length){
-      el.memberList.innerHTML = '<div style="font-size:12px;color:var(--muted-2)">メンバーがいません</div>';
-      return;
+    try {
+      const { members } = await api(`/api/rooms/${r.id}/members`);
+      el.memberList.innerHTML = '';
+      if(!members.length){
+        el.memberList.innerHTML = '<div style="font-size:12px;color:var(--muted-2)">メンバーがいません</div>';
+        return;
+      }
+      members.forEach(u => {
+        const row = document.createElement('div');
+        row.className = 'member-row';
+
+        const av = document.createElement('div');
+        av.className = 'avatar sm';
+        av.textContent = (u.name || '?').slice(0,2).toUpperCase();
+        av.style.background = colorOf(u.avatarColor);
+
+        const nm = document.createElement('div');
+        nm.className = 'name';
+        nm.textContent = u.name + (u.isMe ? '（あなた）' : '');
+
+        const dot = document.createElement('span');
+        const isOnline = u.isMe || state.onlineUsers.has(u.userId);
+        dot.className = isOnline ? 'online-dot' : 'offline-dot';
+        dot.title = isOnline ? 'オンライン' : 'オフライン';
+
+        row.append(av, nm, dot);
+        el.memberList.appendChild(row);
+      });
+    } catch (e) {
+      el.memberList.innerHTML = `<div style="font-size:12px;color:var(--danger)">${e.message}</div>`;
     }
-    members.forEach(u => {
-      const row = document.createElement('div');
-      row.className = 'member-row';
-
-      const av = document.createElement('div');
-      av.className = 'avatar sm';
-      av.textContent = (u.name || '?').slice(0,2).toUpperCase();
-      av.style.background = colorOf(u.avatarColor);
-
-      const nm = document.createElement('div');
-      nm.className = 'name';
-      nm.textContent = u.name + (u.isMe ? '（あなた）' : '');
-
-      const dot = document.createElement('span');
-      const isOnline = u.isMe || state.onlineUsers.has(u.userId);
-      dot.className = isOnline ? 'online-dot' : 'offline-dot';
-      dot.title = isOnline ? 'オンライン' : 'オフライン';
-
-      row.append(av, nm, dot);
-      el.memberList.appendChild(row);
-    });
-  } catch (e) {
-    el.memberList.innerHTML = `<div style="font-size:12px;color:var(--danger)">${e.message}</div>`;
   }
-}
-function toggleDetails(force){
-  const open = force !== undefined ? force : !state.detailsOpen;
-  state.detailsOpen = open;
-  if(window.innerWidth <= 1100){
-    el.details.classList.toggle('open', open);
-  } else {
-    el.details.classList.toggle('collapsed', !open);
+  function toggleDetails(force){
+    const open = force !== undefined ? force : !state.detailsOpen;
+    state.detailsOpen = open;
+    if(window.innerWidth <= 1100){
+      el.details.classList.toggle('open', open);
+    } else {
+      el.details.classList.toggle('collapsed', !open);
+    }
   }
-}
 
   function openSidebar(){ el.sidebar.classList.add('open'); el.scrim.classList.add('show'); }
   function closeSidebar(){ el.sidebar.classList.remove('open'); el.scrim.classList.remove('show'); }
@@ -971,282 +860,313 @@ function toggleDetails(force){
   /* =====================================================
      管理画面
   ===================================================== */
-function openAdminLogin(){
-  if(!state.me?.isAdmin){
-    showToast('管理者権限がありません');
-    return;
-  }
-  renderAdmin();
-  switchScreen('adminScreen');
-}
-async function renderAdmin(){
-  // サマリー
-  try {
-    const s = await api('/api/admin/stats');
-    el.statUsers.textContent = s.users;
-    el.statRooms.textContent = s.rooms;
-    el.statMsgs.textContent = s.messages;
-  } catch (e) { showToast(e.message); }
-
-  // ルーム一覧
-  el.adminRoomList.innerHTML = '<div class="table-row"><div class="grow">読み込み中...</div></div>';
-  try {
-    const { rooms } = await api('/api/admin/rooms');
-    el.adminRoomList.innerHTML = '';
-    rooms.forEach(r => {
-      const row = document.createElement('div');
-      row.className = 'table-row';
-      const nm = document.createElement('div');
-      nm.className = 'grow';
-      nm.textContent = `${r.ico || '💬'} ${r.name}`;
-      const type = document.createElement('span');
-      type.className = 'pill ' + (r.type === 'private' ? 'warn' : 'ok');
-      type.textContent = r.type === 'global' ? '全体' : r.type === 'open' ? 'オープン' : '非公開';
-      const del = document.createElement('button');
-      del.className = 'btn ghost';
-      del.textContent = '削除';
-      del.disabled = r.type === 'global';
-      del.addEventListener('click', async () => {
-        if(!await confirmAction(`「${r.name}」を削除しますか？`)) return;
-        try {
-          await api(`/api/admin/rooms/${r.id}`, { method: 'DELETE' });
-          showToast('ルームを削除しました');
-          renderAdmin();
-        } catch (e) { showToast(e.message); }
-      });
-      row.append(nm, type, del);
-      el.adminRoomList.appendChild(row);
-    });
-  } catch (e) {
-    el.adminRoomList.innerHTML = `<div class="table-row"><div class="grow">${e.message}</div></div>`;
-  }
-
-  // ユーザー一覧
-  el.adminUserList.innerHTML = '<div class="table-row"><div class="grow">読み込み中...</div></div>';
-  try {
-    const { users } = await api('/api/admin/users');
-    el.adminUserList.innerHTML = '';
-    users.forEach(u => {
-      const row = document.createElement('div');
-      row.className = 'table-row';
-      const nm = document.createElement('div');
-      nm.className = 'grow';
-      nm.textContent = u.username + (u.is_admin ? ' 👑' : '');
-      const st = document.createElement('span');
-      st.className = 'pill ' + (u.is_suspended ? 'danger' : 'ok');
-      st.textContent = u.is_suspended ? '停止中' : 'active';
-      const act = document.createElement('button');
-      act.className = 'btn ghost';
-      act.textContent = u.is_suspended ? '再開' : '停止';
-      act.addEventListener('click', async () => {
-        try {
-          await api(`/api/admin/users/${u.id}`, {
-            method: 'PATCH', body: { is_suspended: !u.is_suspended },
-          });
-          renderAdmin();
-        } catch (e) { showToast(e.message); }
-      });
-      row.append(nm, st, act);
-      el.adminUserList.appendChild(row);
-    });
-  } catch (e) {
-    el.adminUserList.innerHTML = `<div class="table-row"><div class="grow">${e.message}</div></div>`;
-  }
-
-  // 通報一覧
-  el.adminReports.innerHTML = '<div class="table-row"><div class="grow">読み込み中...</div></div>';
-  try {
-    const { reports } = await api('/api/admin/reports');
-    el.adminReports.innerHTML = '';
-    if(!reports.length){
-      el.adminReports.innerHTML = '<div class="table-row"><div class="grow">通報はありません</div></div>';
-    } else {
-reports.forEach(rp => {
-  const row = document.createElement('div');
-  row.className = 'table-row';
-  row.style.cursor = 'pointer';
-
-  const txt = document.createElement('div');
-  txt.className = 'grow';
-  txt.innerHTML = `<b>${rp.reporter?.username || '?'}</b> → <b>${rp.target?.username || '?'}</b><div style="font-size:11px;color:var(--muted)">${rp.reason}</div>`;
-
-  const st = document.createElement('span');
-  st.className = 'pill ' + (rp.status === 'open' ? 'danger' : 'ok');
-  st.textContent = rp.status === 'open' ? '要対応' : rp.status === 'resolved' ? '解決済み' : '却下';
-
-  row.append(txt, st);
-  row.addEventListener('click', () => openReportDetail(rp.id));
-  el.adminReports.appendChild(row);
-});
+  function openAdminLogin(){
+    if(!state.me?.isAdmin){
+      showToast('管理者権限がありません');
+      return;
     }
-  } catch (e) {
-    el.adminReports.innerHTML = `<div class="table-row"><div class="grow">${e.message}</div></div>`;
+    renderAdmin();
+    switchScreen('adminScreen');
   }
-}
 
-  // 管理者一覧
-el.adminAdminList.innerHTML = '<div class="table-row"><div class="grow">読み込み中...</div></div>';
-try {
-  const { admins } = await api('/api/admin/admins');
-  el.adminAdminList.innerHTML = '';
-  if(!admins.length){
-    el.adminAdminList.innerHTML = '<div class="table-row"><div class="grow">管理者がいません</div></div>';
-  } else {
-    admins.forEach(u => {
-      const row = document.createElement('div');
-      row.className = 'table-row';
-      const nm = document.createElement('div');
-      nm.className = 'grow';
-      nm.innerHTML = `<b>${u.username}</b>${u.isProtected ? ' 🔒' : ''}`;
-      const st = document.createElement('span');
-      st.className = 'pill ok';
-      st.textContent = '管理者';
-      const del = document.createElement('button');
-      del.className = 'btn ghost';
-      del.textContent = u.isProtected ? '保護中' : '剥奪';
-      del.disabled = u.isProtected;
-      del.addEventListener('click', async () => {
-        try {
-          await api(`/api/admin/users/${u.id}`, {
-            method: 'PATCH', body: { is_admin: false },
-          });
-          showToast(`${u.username} の管理者権限を剥奪しました`);
-          renderAdmin();
-        } catch (e) { showToast(e.message); }
+  async function renderAdmin(){
+    // サマリー
+    try {
+      const s = await api('/api/admin/stats');
+      el.statUsers.textContent = s.users;
+      el.statRooms.textContent = s.rooms;
+      el.statMsgs.textContent = s.messages;
+    } catch (e) { showToast(e.message); }
+
+    // ルーム一覧
+    el.adminRoomList.innerHTML = '<div class="table-row"><div class="grow">読み込み中...</div></div>';
+    try {
+      const { rooms } = await api('/api/admin/rooms');
+      el.adminRoomList.innerHTML = '';
+      rooms.forEach(r => {
+        const row = document.createElement('div');
+        row.className = 'table-row';
+        const nm = document.createElement('div');
+        nm.className = 'grow';
+        nm.textContent = `${r.ico || '💬'} ${r.name}`;
+        const type = document.createElement('span');
+        type.className = 'pill ' + (r.type === 'private' ? 'warn' : 'ok');
+        type.textContent = r.type === 'global' ? '全体' : r.type === 'open' ? 'オープン' : '非公開';
+        const del = document.createElement('button');
+        del.className = 'btn ghost';
+        del.textContent = '削除';
+        del.disabled = r.type === 'global';
+        del.addEventListener('click', async () => {
+          if(!await confirmAction(`「${r.name}」を削除しますか？`)) return;
+          try {
+            await api(`/api/admin/rooms/${r.id}`, { method: 'DELETE' });
+            showToast('ルームを削除しました');
+            renderAdmin();
+          } catch (e) { showToast(e.message); }
+        });
+        row.append(nm, type, del);
+        el.adminRoomList.appendChild(row);
       });
-      row.append(nm, st, del);
-      el.adminAdminList.appendChild(row);
-    });
+    } catch (e) {
+      el.adminRoomList.innerHTML = `<div class="table-row"><div class="grow">${e.message}</div></div>`;
+    }
+
+    // ユーザー一覧
+    el.adminUserList.innerHTML = '<div class="table-row"><div class="grow">読み込み中...</div></div>';
+    try {
+      const { users } = await api('/api/admin/users');
+      el.adminUserList.innerHTML = '';
+      users.forEach(u => {
+        const row = document.createElement('div');
+        row.className = 'table-row';
+        const nm = document.createElement('div');
+        nm.className = 'grow';
+        nm.textContent = u.username + (u.is_admin ? ' 👑' : '');
+        const st = document.createElement('span');
+        st.className = 'pill ' + (u.is_suspended ? 'danger' : 'ok');
+        st.textContent = u.is_suspended ? '停止中' : 'active';
+        const act = document.createElement('button');
+        act.className = 'btn ghost';
+        act.textContent = u.is_suspended ? '再開' : '停止';
+        act.addEventListener('click', async () => {
+          try {
+            await api(`/api/admin/users/${u.id}`, {
+              method: 'PATCH', body: { is_suspended: !u.is_suspended },
+            });
+            renderAdmin();
+          } catch (e) { showToast(e.message); }
+        });
+        row.append(nm, st, act);
+        el.adminUserList.appendChild(row);
+      });
+    } catch (e) {
+      el.adminUserList.innerHTML = `<div class="table-row"><div class="grow">${e.message}</div></div>`;
+    }
+
+    // 通報一覧
+    el.adminReports.innerHTML = '<div class="table-row"><div class="grow">読み込み中...</div></div>';
+    try {
+      const { reports } = await api('/api/admin/reports');
+      el.adminReports.innerHTML = '';
+      if(!reports.length){
+        el.adminReports.innerHTML = '<div class="table-row"><div class="grow">通報はありません</div></div>';
+      } else {
+        reports.forEach(rp => {
+          const row = document.createElement('div');
+          row.className = 'table-row';
+          row.style.cursor = 'pointer';
+          const txt = document.createElement('div');
+          txt.className = 'grow';
+          txt.innerHTML = `<b>${rp.reporter?.username || '?'}</b> → <b>${rp.target?.username || '?'}</b><div style="font-size:11px;color:var(--muted)">${rp.reason}</div>`;
+          const st = document.createElement('span');
+          st.className = 'pill ' + (rp.status === 'open' ? 'danger' : 'ok');
+          st.textContent = rp.status === 'open' ? '要対応' : rp.status === 'resolved' ? '解決済み' : '却下';
+          row.append(txt, st);
+          row.addEventListener('click', () => openReportDetail(rp.id));
+          el.adminReports.appendChild(row);
+        });
+      }
+    } catch (e) {
+      el.adminReports.innerHTML = `<div class="table-row"><div class="grow">${e.message}</div></div>`;
+    }
+
+    // 管理者一覧
+    el.adminAdminList.innerHTML = '<div class="table-row"><div class="grow">読み込み中...</div></div>';
+    try {
+      const { admins } = await api('/api/admin/admins');
+      el.adminAdminList.innerHTML = '';
+      if(!admins.length){
+        el.adminAdminList.innerHTML = '<div class="table-row"><div class="grow">管理者がいません</div></div>';
+      } else {
+        admins.forEach(u => {
+          const row = document.createElement('div');
+          row.className = 'table-row';
+          const nm = document.createElement('div');
+          nm.className = 'grow';
+          nm.innerHTML = `<b>${u.username}</b>${u.isProtected ? ' 🔒' : ''}`;
+          const st = document.createElement('span');
+          st.className = 'pill ok';
+          st.textContent = '管理者';
+          const del = document.createElement('button');
+          del.className = 'btn ghost';
+          del.textContent = u.isProtected ? '保護中' : '剥奪';
+          del.disabled = u.isProtected;
+          del.addEventListener('click', async () => {
+            try {
+              await api(`/api/admin/users/${u.id}`, {
+                method: 'PATCH', body: { is_admin: false },
+              });
+              showToast(`${u.username} の管理者権限を剥奪しました`);
+              renderAdmin();
+            } catch (e) { showToast(e.message); }
+          });
+          row.append(nm, st, del);
+          el.adminAdminList.appendChild(row);
+        });
+      }
+    } catch (e) {
+      el.adminAdminList.innerHTML = `<div class="table-row"><div class="grow">${e.message}</div></div>`;
+    }
   }
-} catch (e) {
-  el.adminAdminList.innerHTML = `<div class="table-row"><div class="grow">${e.message}</div></div>`;
-}
-  let currentReportId = null;
 
-async function openReportDetail(reportId){
-  currentReportId = reportId;
-  el.reportDetailBody.innerHTML = '<div style="font-size:13px;color:var(--muted)">読み込み中...</div>';
-  openModal('reportDetailModal');
+  async function openReportDetail(reportId){
+    currentReportId = reportId;
+    el.reportDetailBody.innerHTML = '<div style="font-size:13px;color:var(--muted)">読み込み中...</div>';
+    openModal('reportDetailModal');
 
-  try {
-    const { report, targetReportCount } = await api(`/api/admin/reports/${reportId}`);
-    renderReportDetail(report, targetReportCount);
-  } catch (e) {
-    el.reportDetailBody.innerHTML = `<div style="font-size:13px;color:var(--danger)">${e.message}</div>`;
-  }
-}
-
-function renderReportDetail(r, targetReportCount){
-  const body = el.reportDetailBody;
-  body.innerHTML = '';
-
-  // ステータスバッジ
-  const statusRow = document.createElement('div');
-  const statusPill = document.createElement('span');
-  statusPill.className = 'pill ' + (r.status === 'open' ? 'danger' : 'ok');
-  statusPill.textContent = r.status === 'open' ? '要対応' : r.status === 'resolved' ? '解決済み' : '却下';
-  statusRow.appendChild(statusPill);
-  body.appendChild(statusRow);
-
-  // 通報されたメッセージ
-  if(r.message){
-    const sec = document.createElement('div');
-    sec.className = 'details-section';
-    sec.style.borderRadius = '12px';
-    sec.style.background = 'var(--bg-2)';
-    sec.style.border = '1px solid var(--border)';
-
-    const h = document.createElement('h4');
-    h.textContent = '通報されたメッセージ';
-    sec.appendChild(h);
-
-    const room = document.createElement('div');
-    room.style.fontSize = '12px';
-    room.style.color = 'var(--muted)';
-    room.style.marginBottom = '8px';
-    room.textContent = `${r.message.roomIco} ${r.message.roomName}（${r.message.roomType === 'global' ? '全体' : r.message.roomType === 'open' ? 'オープン' : 'プライベート'}）`;
-    sec.appendChild(room);
-
-    const bubble = document.createElement('div');
-    bubble.className = 'bubble';
-    bubble.style.marginBottom = '6px';
-    bubble.textContent = r.message.content;
-    sec.appendChild(bubble);
-
-    const time = document.createElement('div');
-    time.style.fontSize = '11px';
-    time.style.color = 'var(--muted-2)';
-    time.textContent = `投稿日時: ${new Date(r.message.createdAt).toLocaleString('ja-JP')}`;
-    sec.appendChild(time);
-
-    body.appendChild(sec);
+    try {
+      const { report, targetReportCount } = await api(`/api/admin/reports/${reportId}`);
+      renderReportDetail(report, targetReportCount);
+    } catch (e) {
+      el.reportDetailBody.innerHTML = `<div style="font-size:13px;color:var(--danger)">${e.message}</div>`;
+    }
   }
 
-  // 投稿者情報
-  if(r.target){
-    const sec = document.createElement('div');
-    sec.className = 'member-row';
-    const av = document.createElement('div');
-    av.className = 'avatar sm';
-    av.textContent = (r.target.username || '?').slice(0,2).toUpperCase();
-    av.style.background = colorOf(r.target.avatarColor);
-    const nm = document.createElement('div');
-    nm.className = 'name';
-    nm.innerHTML = `<b>${r.target.username}</b><div style="font-size:11px;color:var(--muted)">投稿者・過去の通報 ${targetReportCount} 件</div>`;
-    sec.append(av, nm);
-    body.appendChild(sec);
+  function renderReportDetail(r, targetReportCount){
+    const body = el.reportDetailBody;
+    body.innerHTML = '';
+
+    const statusRow = document.createElement('div');
+    const statusPill = document.createElement('span');
+    statusPill.className = 'pill ' + (r.status === 'open' ? 'danger' : 'ok');
+    statusPill.textContent = r.status === 'open' ? '要対応' : r.status === 'resolved' ? '解決済み' : '却下';
+    statusRow.appendChild(statusPill);
+    body.appendChild(statusRow);
+
+    if(r.message){
+      const sec = document.createElement('div');
+      sec.className = 'details-section';
+      sec.style.borderRadius = '12px';
+      sec.style.background = 'var(--bg-2)';
+      sec.style.border = '1px solid var(--border)';
+
+      const h = document.createElement('h4');
+      h.textContent = '通報されたメッセージ';
+      sec.appendChild(h);
+
+      const room = document.createElement('div');
+      room.style.fontSize = '12px';
+      room.style.color = 'var(--muted)';
+      room.style.marginBottom = '8px';
+      room.textContent = `${r.message.roomIco} ${r.message.roomName}（${r.message.roomType === 'global' ? '全体' : r.message.roomType === 'open' ? 'オープン' : 'プライベート'}）`;
+      sec.appendChild(room);
+
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble';
+      bubble.style.marginBottom = '6px';
+      bubble.textContent = r.message.content;
+      sec.appendChild(bubble);
+
+      const time = document.createElement('div');
+      time.style.fontSize = '11px';
+      time.style.color = 'var(--muted-2)';
+      time.textContent = `投稿日時: ${new Date(r.message.createdAt).toLocaleString('ja-JP')}`;
+      sec.appendChild(time);
+
+      body.appendChild(sec);
+    }
+
+    if(r.target){
+      const sec = document.createElement('div');
+      sec.className = 'member-row';
+      const av = document.createElement('div');
+      av.className = 'avatar sm';
+      av.textContent = (r.target.username || '?').slice(0,2).toUpperCase();
+      av.style.background = colorOf(r.target.avatarColor);
+      const nm = document.createElement('div');
+      nm.className = 'name';
+      nm.innerHTML = `<b>${r.target.username}</b><div style="font-size:11px;color:var(--muted)">投稿者・過去の通報 ${targetReportCount} 件</div>`;
+      sec.append(av, nm);
+      body.appendChild(sec);
+    }
+
+    if(r.reporter){
+      const sec = document.createElement('div');
+      sec.className = 'member-row';
+      const av = document.createElement('div');
+      av.className = 'avatar sm';
+      av.textContent = (r.reporter.username || '?').slice(0,2).toUpperCase();
+      av.style.background = colorOf(r.reporter.avatarColor);
+      const nm = document.createElement('div');
+      nm.className = 'name';
+      nm.innerHTML = `<b>${r.reporter.username}</b><div style="font-size:11px;color:var(--muted)">通報者</div>`;
+      sec.append(av, nm);
+      body.appendChild(sec);
+    }
+
+    const reasonSec = document.createElement('div');
+    const rh = document.createElement('h4');
+    rh.textContent = '通報理由';
+    rh.style.margin = '0 0 8px';
+    rh.style.fontSize = '11px';
+    rh.style.letterSpacing = '.8px';
+    rh.style.textTransform = 'uppercase';
+    rh.style.color = 'var(--muted-2)';
+    const reasonText = document.createElement('div');
+    reasonText.style.fontSize = '13px';
+    reasonText.style.lineHeight = '1.6';
+    reasonText.textContent = r.reason;
+    reasonSec.append(rh, reasonText);
+    body.appendChild(reasonSec);
+
+    const created = document.createElement('div');
+    created.style.fontSize = '11px';
+    created.style.color = 'var(--muted-2)';
+    created.textContent = `通報日時: ${new Date(r.createdAt).toLocaleString('ja-JP')}`;
+    body.appendChild(created);
+
+    const isOpen = r.status === 'open';
+    el.reportDetailResolve.disabled = !isOpen;
+    el.reportDetailDismiss.disabled = !isOpen;
   }
 
-  // 通報者情報
-  if(r.reporter){
-    const sec = document.createElement('div');
-    sec.className = 'member-row';
-    const av = document.createElement('div');
-    av.className = 'avatar sm';
-    av.textContent = (r.reporter.username || '?').slice(0,2).toUpperCase();
-    av.style.background = colorOf(r.reporter.avatarColor);
-    const nm = document.createElement('div');
-    nm.className = 'name';
-    nm.innerHTML = `<b>${r.reporter.username}</b><div style="font-size:11px;color:var(--muted)">通報者</div>`;
-    sec.append(av, nm);
-    body.appendChild(sec);
+  /* =====================================================
+     招待
+  ===================================================== */
+  async function refreshInvites(){
+    try {
+      const { invites } = await api('/api/invites');
+      const badge = el.inviteBadge;
+      if(badge){
+        badge.style.display = invites.length ? 'inline-flex' : 'none';
+        badge.textContent = String(invites.length);
+      }
+      el.invitesList.innerHTML = '';
+      if(!invites.length){
+        el.invitesList.innerHTML = '<div style="font-size:13px;color:var(--muted)">招待はありません</div>';
+        return;
+      }
+      invites.forEach(inv => {
+        const row = document.createElement('div');
+        row.className = 'table-row';
+        const info = document.createElement('div');
+        info.className = 'grow';
+        info.innerHTML = `<b>${inv.roomIco} ${inv.roomName}</b><div style="font-size:11px;color:var(--muted)">${inv.inviterName} さんから</div>`;
+        const acc = document.createElement('button');
+        acc.className = 'btn primary';
+        acc.textContent = '参加';
+        acc.addEventListener('click', async () => {
+          try {
+            await api(`/api/invites/${inv.id}/accept`, { method: 'POST' });
+            showToast(`「${inv.roomName}」に参加しました`);
+            await refreshInvites();
+            await loadRooms();
+          } catch (e) { showToast(e.message); }
+        });
+        const dec = document.createElement('button');
+        dec.className = 'btn ghost';
+        dec.textContent = '辞退';
+        dec.addEventListener('click', async () => {
+          try {
+            await api(`/api/invites/${inv.id}/decline`, { method: 'POST' });
+            await refreshInvites();
+          } catch (e) { showToast(e.message); }
+        });
+        row.append(info, acc, dec);
+        el.invitesList.appendChild(row);
+      });
+    } catch (e) { /* 未ログイン時など */ }
   }
-
-  // 通報理由
-  const reasonSec = document.createElement('div');
-  const rh = document.createElement('h4');
-  rh.textContent = '通報理由';
-  rh.style.margin = '0 0 8px';
-  rh.style.fontSize = '11px';
-  rh.style.letterSpacing = '.8px';
-  rh.style.textTransform = 'uppercase';
-  rh.style.color = 'var(--muted-2)';
-  const reasonText = document.createElement('div');
-  reasonText.style.fontSize = '13px';
-  reasonText.style.lineHeight = '1.6';
-  reasonText.textContent = r.reason;
-  reasonSec.append(rh, reasonText);
-  body.appendChild(reasonSec);
-
-  // 通報日時
-  const created = document.createElement('div');
-  created.style.fontSize = '11px';
-  created.style.color = 'var(--muted-2)';
-  created.textContent = `通報日時: ${new Date(r.createdAt).toLocaleString('ja-JP')}`;
-  body.appendChild(created);
-
-  // ボタンの有効/無効
-  const isOpen = r.status === 'open';
-  el.reportDetailResolve.disabled = !isOpen;
-  el.reportDetailDismiss.disabled = !isOpen;
-}
-  
-  function confirmAction(message){
-  return new Promise(resolve => {
-    try { resolve(window.confirm(message)); }
-    catch { resolve(true); }
-  });
-}
 
   /* =====================================================
      イベント登録
@@ -1315,114 +1235,154 @@ function renderReportDetail(r, targetReportCount){
 
   el.toggleDetails.addEventListener('click', () => toggleDetails());
   el.closeDetails.addEventListener('click', () => toggleDetails(false));
-el.leaveRoom.addEventListener('click', () => {
-  const r = activeRoom();
-  if(!r || r.type === 'global'){ showToast('全体チャットは退出できません'); return; }
-  el.leaveModalDesc.textContent = `「${r.name}」を退出しますか？`;
-  openModal('leaveModal');
-});
 
-el.leaveConfirmBtn.addEventListener('click', async () => {
-  const r = activeRoom();
-  if(!r) return;
-  closeModal('leaveModal');
+  el.leaveRoom.addEventListener('click', () => {
+    const r = activeRoom();
+    if(!r || r.type === 'global'){ showToast('全体チャットは退出できません'); return; }
+    el.leaveModalDesc.textContent = `「${r.name}」を退出しますか？`;
+    openModal('leaveModal');
+  });
 
-  try {
-    const result = await api(`/api/rooms/${r.id}/members/me`, { method: 'DELETE' });
-    state.activeRoomId = null;
-    state.messages = [];
-    toggleDetails(false);
-    await loadRooms();           // サーバーから再取得
-    showToast(result.deleted ? 'ルームを退出し、削除しました' : 'ルームを退出しました');
-  } catch (e) {
-    showToast(e.message);
-  }
-});
-  /* サイドバー開閉（PC・モバイル共通） */
-el.sidebarToggle.addEventListener('click', () => {
-  if(window.innerWidth <= 820){
-    // モバイル：オーバーレイ表示のトグル
-    el.sidebar.classList.toggle('open');
-    el.scrim.classList.toggle('show');
-  } else {
-    // PC：幅を畳む
-    el.sidebar.classList.toggle('collapsed');
-  }
-});
+  el.leaveConfirmBtn.addEventListener('click', async () => {
+    const r = activeRoom();
+    if(!r) return;
+    closeModal('leaveModal');
+    try {
+      const result = await api(`/api/rooms/${r.id}/members/me`, { method: 'DELETE' });
+      state.activeRoomId = null;
+      state.messages = [];
+      toggleDetails(false);
+      await loadRooms();
+      showToast(result.deleted ? 'ルームを退出し、削除しました' : 'ルームを退出しました');
+    } catch (e) {
+      showToast(e.message);
+    }
+  });
 
-/* 既存の backBtn は削除（sidebarToggle に統合） */
-// el.backBtn.addEventListener('click', openSidebar); ← 削除
+  el.sidebarToggle.addEventListener('click', () => {
+    if(window.innerWidth <= 820){
+      el.sidebar.classList.toggle('open');
+      el.scrim.classList.toggle('show');
+    } else {
+      el.sidebar.classList.toggle('collapsed');
+    }
+  });
 
-el.scrim.addEventListener('click', () => {
-  el.sidebar.classList.remove('open');
-  el.scrim.classList.remove('show');
-});
   el.scrim.addEventListener('click', closeSidebar);
 
-el.openAdmin.addEventListener('click', openAdminLogin);
-el.adminExit.addEventListener('click', () => switchScreen('appScreen'));
+  el.openAdmin.addEventListener('click', openAdminLogin);
+  el.adminExit.addEventListener('click', () => switchScreen('appScreen'));
 
-el.clearAll.addEventListener('click', async () => {
-  if(!state.me?.isAdmin){ showToast('管理者権限がありません'); return; }
-  if(!await confirmAction('全メッセージを削除しますか？この操作は取り消せません。')) return;
-  try {
-    await api('/api/admin/messages', { method: 'DELETE' });
-    showToast('全メッセージを削除しました');
-    renderAdmin();
-  } catch (e) { showToast(e.message); }
-});
+  el.clearAll.addEventListener('click', async () => {
+    if(!state.me?.isAdmin){ showToast('管理者権限がありません'); return; }
+    if(!await confirmAction('全メッセージを削除しますか？この操作は取り消せません。')) return;
+    try {
+      await api('/api/admin/messages', { method: 'DELETE' });
+      showToast('全メッセージを削除しました');
+      renderAdmin();
+    } catch (e) { showToast(e.message); }
+  });
 
+  el.openInvites.addEventListener('click', async () => {
+    await refreshInvites();
+    openModal('invitesModal');
+  });
 
+  el.inviteMemberBtn.addEventListener('click', () => {
+    const r = activeRoom();
+    if(!r) return;
+    if(r.type !== 'private'){ showToast('プライベートルームのみ招待できます'); return; }
+    el.inviteName.value = '';
+    setErr(el.inviteErr, '');
+    openModal('inviteModal');
+    setTimeout(() => el.inviteName.focus(), 50);
+  });
 
-async function refreshInvites(){
-  try {
-    const { invites } = await api('/api/invites');
-    const badge = el.inviteBadge;
-    if(badge){
-      badge.style.display = invites.length ? 'inline-flex' : 'none';
-      badge.textContent = String(invites.length);
-    }
-    el.invitesList.innerHTML = '';
-    if(!invites.length){
-      el.invitesList.innerHTML = '<div style="font-size:13px;color:var(--muted)">招待はありません</div>';
-      return;
-    }
-    invites.forEach(inv => {
-      const row = document.createElement('div');
-      row.className = 'table-row';
-      const info = document.createElement('div');
-      info.className = 'grow';
-      info.innerHTML = `<b>${inv.roomIco} ${inv.roomName}</b><div style="font-size:11px;color:var(--muted)">${inv.inviterName} さんから</div>`;
-      const acc = document.createElement('button');
-      acc.className = 'btn primary';
-      acc.textContent = '参加';
-      acc.addEventListener('click', async () => {
-        try {
-          await api(`/api/invites/${inv.id}/accept`, { method: 'POST' });
-          showToast(`「${inv.roomName}」に参加しました`);
-          await refreshInvites();
-          await loadRooms();
-        } catch (e) { showToast(e.message); }
+  el.inviteSendBtn.addEventListener('click', async () => {
+    const r = activeRoom();
+    const name = el.inviteName.value.trim();
+    setErr(el.inviteErr, '');
+    if(!name){ setErr(el.inviteErr, 'ユーザー名を入力してください'); return; }
+    el.inviteSendBtn.disabled = true;
+    try {
+      const { invitee } = await api(`/api/rooms/${r.id}/invites`, {
+        method: 'POST', body: { username: name },
       });
-      const dec = document.createElement('button');
-      dec.className = 'btn ghost';
-      dec.textContent = '辞退';
-      dec.addEventListener('click', async () => {
-        try {
-          await api(`/api/invites/${inv.id}/decline`, { method: 'POST' });
-          await refreshInvites();
-        } catch (e) { showToast(e.message); }
-      });
-      row.append(info, acc, dec);
-      el.invitesList.appendChild(row);
-    });
-  } catch (e) { /* 未ログイン時など */ }
-}
+      closeModal('inviteModal');
+      showToast(`${invitee} さんを招待しました`);
+    } catch (e) {
+      setErr(el.inviteErr, e.message);
+    } finally {
+      el.inviteSendBtn.disabled = false;
+    }
+  });
 
-el.openInvites.addEventListener('click', async () => {
-  await refreshInvites();
-  openModal('invitesModal');
-});
+  el.reportSendBtn.addEventListener('click', async () => {
+    const m = state.reportTarget;
+    const reason = el.reportReason.value.trim();
+    setErr(el.reportErr, '');
+    if(!m){ closeModal('reportModal'); return; }
+    if(!reason){ setErr(el.reportErr, '理由を入力してください'); return; }
+    el.reportSendBtn.disabled = true;
+    try {
+      await api('/api/reports', {
+        method: 'POST',
+        body: { messageId: m.id, reason },
+      });
+      closeModal('reportModal');
+      showToast('通報しました');
+    } catch (e) {
+      setErr(el.reportErr, e.message);
+    } finally {
+      el.reportSendBtn.disabled = false;
+    }
+  });
+
+  el.reportDetailResolve.addEventListener('click', async () => {
+    if(!currentReportId) return;
+    try {
+      await api(`/api/admin/reports/${currentReportId}`, {
+        method: 'PATCH', body: { status: 'resolved' },
+      });
+      closeModal('reportDetailModal');
+      showToast('解決済みにしました');
+      renderAdmin();
+    } catch (e) { showToast(e.message); }
+  });
+
+  el.reportDetailDismiss.addEventListener('click', async () => {
+    if(!currentReportId) return;
+    try {
+      await api(`/api/admin/reports/${currentReportId}`, {
+        method: 'PATCH', body: { status: 'dismissed' },
+      });
+      closeModal('reportDetailModal');
+      showToast('却下しました');
+      renderAdmin();
+    } catch (e) { showToast(e.message); }
+  });
+
+  el.promoteBtn.addEventListener('click', async () => {
+    const username = el.promoteUsername.value.trim();
+    if(!username){ showToast('ユーザー名を入力してください'); return; }
+    el.promoteBtn.disabled = true;
+    try {
+      const { users } = await api('/api/admin/users');
+      const target = users.find(u => u.username.toLowerCase() === username.toLowerCase());
+      if(!target){ showToast('ユーザーが見つかりません'); return; }
+      if(target.is_admin){ showToast('既に管理者です'); return; }
+      await api(`/api/admin/users/${target.id}`, {
+        method: 'PATCH', body: { is_admin: true },
+      });
+      el.promoteUsername.value = '';
+      showToast(`${target.username} を管理者に追加しました`);
+      renderAdmin();
+    } catch (e) {
+      showToast(e.message);
+    } finally {
+      el.promoteBtn.disabled = false;
+    }
+  });
 
   /* =====================================================
      起動
