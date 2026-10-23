@@ -55,6 +55,12 @@ const signToken = (user) =>
   );
 
 /* =====================================================
+   最高管理者一覧
+===================================================== */
+
+const PROTECTED_ADMIN_USERNAME = 'K-tube-admin';
+
+/* =====================================================
    POST /api/signup
    body: { username, password, avatarColor }
 ===================================================== */
@@ -356,6 +362,10 @@ app.get('/api/admin/users', authRequired, adminRequired, async (req, res) => {
 /* =====================================================
    PATCH /api/admin/users/:id  body: { is_suspended?, is_admin? }
 ===================================================== */
+/* =====================================================
+   PATCH /api/admin/users/:id
+   body: { is_suspended?, is_admin? }
+===================================================== */
 app.patch('/api/admin/users/:id', authRequired, adminRequired, async (req, res) => {
   const id = req.params.id;
   const patch = {};
@@ -364,12 +374,70 @@ app.patch('/api/admin/users/:id', authRequired, adminRequired, async (req, res) 
   if (!Object.keys(patch).length)
     return res.status(400).json({ error: '更新項目がありません' });
 
+  // 対象ユーザーの情報を取得
+  const { data: target } = await supabase
+    .from('profiles')
+    .select('id, username, is_admin, is_suspended')
+    .eq('id', id)
+    .maybeSingle();
+  if (!target) return res.status(404).json({ error: 'ユーザーが見つかりません' });
+
+  // 保護アカウントは管理者剥奪・停止を拒否
+  if (target.username === PROTECTED_ADMIN_USERNAME) {
+    if (patch.is_admin === false)
+      return res.status(400).json({ error: `${PROTECTED_ADMIN_USERNAME} の管理者権限は外せません` });
+    if (patch.is_suspended === true)
+      return res.status(400).json({ error: `${PROTECTED_ADMIN_USERNAME} は停止できません` });
+  }
+
   // 自分自身の管理者剥奪は禁止
   if (id === req.user.sub && patch.is_admin === false)
     return res.status(400).json({ error: '自分自身の管理者権限は外せません' });
 
   const { error } = await supabase.from('profiles').update(patch).eq('id', id);
   if (error) return res.status(500).json({ error: '更新に失敗しました' });
+  return res.json({ ok: true });
+});
+/* =====================================================
+   GET /api/admin/admins
+   管理者一覧
+===================================================== */
+app.get('/api/admin/admins', authRequired, adminRequired, async (req, res) => {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, username, avatar_color, is_admin, is_suspended, created_at')
+    .eq('is_admin', true)
+    .order('created_at', { ascending: true });
+  if (error) return res.status(500).json({ error: '管理者取得に失敗しました' });
+  return res.json({
+    admins: (data || []).map((u) => ({
+      ...u,
+      isProtected: u.username === PROTECTED_ADMIN_USERNAME,
+    })),
+  });
+});
+
+/* =====================================================
+   DELETE /api/admin/users/:id
+===================================================== */
+app.delete('/api/admin/users/:id', authRequired, adminRequired, async (req, res) => {
+  const id = req.params.id;
+
+  const { data: target } = await supabase
+    .from('profiles')
+    .select('id, username')
+    .eq('id', id)
+    .maybeSingle();
+  if (!target) return res.status(404).json({ error: 'ユーザーが見つかりません' });
+
+  if (target.username === PROTECTED_ADMIN_USERNAME)
+    return res.status(400).json({ error: `${PROTECTED_ADMIN_USERNAME} は削除できません` });
+  if (id === req.user.sub)
+    return res.status(400).json({ error: '自分自身は削除できません' });
+
+  // auth.users から削除（profilesはCASCADEで削除される）
+  const { error } = await supabase.auth.admin.deleteUser(id);
+  if (error) return res.status(500).json({ error: '削除に失敗しました' });
   return res.json({ ok: true });
 });
 
