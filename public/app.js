@@ -36,6 +36,7 @@ const state = {
   channel: null,
   presenceChannel: null,       // ← 追加
   onlineUsers: new Set(),      // ← 追加
+  reportTarget: null,   // 通報対象のメッセージ
 };
 
   const uid = () => Math.random().toString(36).slice(2, 9);
@@ -131,6 +132,10 @@ const state = {
     inviteBadge: $('inviteBadge'),    
     invitesModal: $('invitesModal'),
     invitesList: $('invitesList'),
+    reportModal: $('reportModal'),
+    reportReason: $('reportReason'),
+    reportErr: $('reportErr'),
+    reportSendBtn: $('reportSendBtn'),
   };
 
   let selectedAvatar = 0;
@@ -163,6 +168,28 @@ el.inviteSendBtn.addEventListener('click', async () => {
     setErr(el.inviteErr, e.message);
   } finally {
     el.inviteSendBtn.disabled = false;
+  }
+});
+
+  el.reportSendBtn.addEventListener('click', async () => {
+  const m = state.reportTarget;
+  const reason = el.reportReason.value.trim();
+  setErr(el.reportErr, '');
+  if(!m){ closeModal('reportModal'); return; }
+  if(!reason){ setErr(el.reportErr, '理由を入力してください'); return; }
+
+  el.reportSendBtn.disabled = true;
+  try {
+    await api('/api/reports', {
+      method: 'POST',
+      body: { messageId: m.id, reason },
+    });
+    closeModal('reportModal');
+    showToast('通報しました');
+  } catch (e) {
+    setErr(el.reportErr, e.message);
+  } finally {
+    el.reportSendBtn.disabled = false;
   }
 });
 
@@ -526,15 +553,26 @@ function enterApp(user){
     tail.appendChild(bubble);
 
     const actions = document.createElement('div');
-    actions.className = 'msg-actions';
-    ['👍','❤️','😂','😮'].forEach(rx => {
-      const b = document.createElement('button');
-      b.className = 'react-btn';
-      b.textContent = rx;
-      b.addEventListener('click', () => toggleReaction(m, rx, false));
-      actions.appendChild(b);
-    });
-    tail.appendChild(actions);
+actions.className = 'msg-actions';
+['👍','❤️','😂','😮'].forEach(rx => {
+  const b = document.createElement('button');
+  b.className = 'react-btn';
+  b.textContent = rx;
+  b.addEventListener('click', () => toggleReaction(m, rx, false));
+  actions.appendChild(b);
+});
+
+// 自分のメッセージ以外は通報ボタンを追加
+if(!m.mine){
+  const reportBtn = document.createElement('button');
+  reportBtn.className = 'react-btn';
+  reportBtn.textContent = '🚩';
+  reportBtn.title = '通報';
+  reportBtn.addEventListener('click', () => openReportModal(m));
+  actions.appendChild(reportBtn);
+}
+
+tail.appendChild(actions);
 
 if(m.reactions && Object.keys(m.reactions).length){
   const bar = document.createElement('div');
@@ -573,6 +611,14 @@ async function toggleReaction(m, rx, isMine){
   } catch (e) {
     showToast(e.message);
   }
+}
+
+  function openReportModal(m){
+  state.reportTarget = m;
+  el.reportReason.value = '';
+  setErr(el.reportErr, '');
+  openModal('reportModal');
+  setTimeout(() => el.reportReason.focus(), 50);
 }
 
   /* =====================================================
