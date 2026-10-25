@@ -34,6 +34,7 @@
     presenceChannel: null,
     onlineUsers: new Set(),
     reportTarget: null,
+    currentReport: null,   // 通報詳細のデータ
   };
 
   let currentReportId = null;
@@ -141,7 +142,43 @@
     reportDetailBody: $('reportDetailBody'),
     reportDetailResolve: $('reportDetailResolve'),
     reportDetailDismiss: $('reportDetailDismiss'),
+
+    reportDetailDeleteMsg: $('reportDetailDeleteMsg'),
+    reportDetailSuspend: $('reportDetailSuspend'),
   };
+
+  el.reportDetailDeleteMsg.addEventListener('click', async () => {
+  const r = state.currentReport;
+  if(!r || !r.message) return;
+  if(!await confirmAction('このメッセージを削除しますか？')) return;
+  try {
+    await api(`/api/admin/messages/${r.message.id}`, { method: 'DELETE' });
+    // 通報を解決済みに
+    await api(`/api/admin/reports/${currentReportId}`, {
+      method: 'PATCH', body: { status: 'resolved' },
+    });
+    closeModal('reportDetailModal');
+    showToast('メッセージを削除し、通報を解決済みにしました');
+    renderAdmin();
+  } catch (e) { showToast(e.message); }
+});
+
+  el.reportDetailSuspend.addEventListener('click', async () => {
+  const r = state.currentReport;
+  if(!r || !r.target) return;
+  if(!await confirmAction(`「${r.target.username}」を停止しますか？`)) return;
+  try {
+    await api(`/api/admin/users/${r.target.id}`, {
+      method: 'PATCH', body: { is_suspended: true },
+    });
+    await api(`/api/admin/reports/${currentReportId}`, {
+      method: 'PATCH', body: { status: 'resolved' },
+    });
+    closeModal('reportDetailModal');
+    showToast(`${r.target.username} を停止し、通報を解決済みにしました`);
+    renderAdmin();
+  } catch (e) { showToast(e.message); }
+});
 
   /* =====================================================
      共通ユーティリティ
@@ -261,8 +298,30 @@
     loadRooms();
     refreshInvites();
     subscribePresence();
+    subscribeSuspension(); 
   }
+let suspensionChannel = null;
+function subscribeSuspension(){
+  if(!sb || !state.me) return;
+  if(suspensionChannel) return;
 
+  suspensionChannel = sb
+    .channel('user:suspension')
+    .on('broadcast', { event: 'suspended' }, ({ payload }) => {
+      if(payload?.userId === state.me.id){
+        showToast('アカウントが停止されました。ログアウトします。', 4000);
+        setTimeout(() => doLogout(), 1500);
+      }
+    })
+    .subscribe();
+}
+
+function unsubscribeSuspension(){
+  if(suspensionChannel && sb){
+    sb.removeChannel(suspensionChannel);
+  }
+  suspensionChannel = null;
+}
   async function doLogin(){
     const name = el.loginName.value.trim();
     const pass = el.loginPass.value;
@@ -313,6 +372,7 @@
   function doLogout(){
     unsubscribeRoom();
     unsubscribePresence();
+    unsubscribeSuspension();
     clearSession();
     state.rooms = [];
     state.activeRoomId = null;
@@ -321,6 +381,7 @@
     switchScreen('authScreen');
     showLogin();
     showToast('ログアウトしました');
+
   }
 
   /* =====================================================
@@ -1009,18 +1070,21 @@
     }
   }
 
-  async function openReportDetail(reportId){
-    currentReportId = reportId;
-    el.reportDetailBody.innerHTML = '<div style="font-size:13px;color:var(--muted)">読み込み中...</div>';
-    openModal('reportDetailModal');
 
-    try {
-      const { report, targetReportCount } = await api(`/api/admin/reports/${reportId}`);
-      renderReportDetail(report, targetReportCount);
-    } catch (e) {
-      el.reportDetailBody.innerHTML = `<div style="font-size:13px;color:var(--danger)">${e.message}</div>`;
-    }
+  async function openReportDetail(reportId){
+  currentReportId = reportId;
+  state.currentReport = null;
+  el.reportDetailBody.innerHTML = '<div style="font-size:13px;color:var(--muted)">読み込み中...</div>';
+  openModal('reportDetailModal');
+
+  try {
+    const { report, targetReportCount } = await api(`/api/admin/reports/${reportId}`);
+    state.currentReport = report;
+    renderReportDetail(report, targetReportCount);
+  } catch (e) {
+    el.reportDetailBody.innerHTML = `<div style="font-size:13px;color:var(--danger)">${e.message}</div>`;
   }
+}
 
   function renderReportDetail(r, targetReportCount){
     const body = el.reportDetailBody;
@@ -1115,9 +1179,12 @@
     created.textContent = `通報日時: ${new Date(r.createdAt).toLocaleString('ja-JP')}`;
     body.appendChild(created);
 
-    const isOpen = r.status === 'open';
-    el.reportDetailResolve.disabled = !isOpen;
-    el.reportDetailDismiss.disabled = !isOpen;
+const isOpen = r.status === 'open';
+el.reportDetailResolve.disabled = !isOpen;
+el.reportDetailDismiss.disabled = !isOpen;
+el.reportDetailDeleteMsg.disabled = !r.message;
+el.reportDetailSuspend.disabled = !r.target || r.target.isSuspended || r.target.username === 'K-tube-admin';
+el.reportDetailSuspend.textContent = r.target?.isSuspended ? '停止中' : '投稿者を停止';
   }
 
   /* =====================================================
