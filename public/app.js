@@ -145,6 +145,12 @@
 
     reportDetailDeleteMsg: $('reportDetailDeleteMsg'),
     reportDetailSuspend: $('reportDetailSuspend'),
+
+    confirmModal: $('confirmModal'),
+    confirmTitle: $('confirmTitle'),
+    confirmMessage: $('confirmMessage'),
+    confirmOkBtn: $('confirmOkBtn'),
+    
   };
 
   el.reportDetailDeleteMsg.addEventListener('click', async () => {
@@ -196,12 +202,29 @@
   function openModal(id){ $(id).classList.add('show'); }
   function closeModal(id){ $(id).classList.remove('show'); }
   function setErr(node, msg){ node.textContent = msg || ''; }
-  function confirmAction(message){
-    return new Promise(resolve => {
-      try { resolve(window.confirm(message)); }
-      catch { resolve(true); }
-    });
-  }
+let confirmResolver = null;
+
+function confirmAction(message, title = '確認'){
+  return new Promise(resolve => {
+    confirmResolver = resolve;
+    el.confirmTitle.textContent = title;
+    el.confirmMessage.textContent = message;
+    openModal('confirmModal');
+  });
+}
+
+el.confirmOkBtn.addEventListener('click', () => {
+  closeModal('confirmModal');
+  if(confirmResolver){ confirmResolver(true); confirmResolver = null; }
+});
+
+// キャンセル・背景クリック・×で閉じたときは false
+document.querySelectorAll('#confirmModal [data-close], #confirmModal').forEach(node => {
+  node.addEventListener('click', (e) => {
+    if(node.id === 'confirmModal' && e.target !== node) return;
+    if(confirmResolver){ confirmResolver(false); confirmResolver = null; }
+  });
+});
 
   /* =====================================================
      API ラッパー
