@@ -353,11 +353,13 @@
   <div class="modal" style="width:min(560px,100%)">
     <h3>通報の詳細</h3>
     <div id="reportDetailBody" style="display:flex;flex-direction:column;gap:14px"></div>
-    <div class="modal-actions">
-      <button class="btn" data-close="reportDetailModal">閉じる</button>
-      <button class="btn ghost" id="reportDetailDismiss">却下</button>
-      <button class="btn primary" id="reportDetailResolve">解決済みにする</button>
-    </div>
+<div class="modal-actions" style="flex-wrap:wrap">
+  <button class="btn" data-close="reportDetailModal">閉じる</button>
+  <button class="btn ghost" id="reportDetailDismiss">却下</button>
+  <button class="btn" id="reportDetailDeleteMsg">メッセージ削除</button>
+  <button class="btn danger" id="reportDetailSuspend">投稿者を停止</button>
+  <button class="btn primary" id="reportDetailResolve">解決済みにする</button>
+</div>
   </div>
 </div>
 
