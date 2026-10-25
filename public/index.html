@@ -363,6 +363,19 @@
   </div>
 </div>
 
+
+  <!-- モーダル: 汎用確認 -->
+<div class="modal-backdrop" id="confirmModal">
+  <div class="modal" style="width:min(400px,100%)">
+    <h3 id="confirmTitle">確認</h3>
+    <div class="modal-sub" id="confirmMessage">実行しますか？</div>
+    <div class="modal-actions">
+      <button class="btn" data-close="confirmModal">キャンセル</button>
+      <button class="btn danger" id="confirmOkBtn">実行する</button>
+    </div>
+  </div>
+</div>
+  
 <div class="toast" id="toast"></div>
 
 <script src="app.js"></script>
