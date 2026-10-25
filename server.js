@@ -504,7 +504,7 @@ app.get('/api/admin/reports/:id', authRequired, adminRequired, async (req, res) 
     .select(`
       id, reason, status, created_at,
       reporter:reporter_id (id, username, avatar_color),
-      target:target_user (id, username, avatar_color),
+      target:target_user (id, username, avatar_color, is_suspended),
       message:message_id (
         id, content, created_at, room_id,
         rooms:room_id (id, name, type, ico)
@@ -534,9 +534,14 @@ app.get('/api/admin/reports/:id', authRequired, adminRequired, async (req, res) 
       reporter: data.reporter
         ? { id: data.reporter.id, username: data.reporter.username, avatarColor: data.reporter.avatar_color }
         : null,
-      target: data.target
-        ? { id: data.target.id, username: data.target.username, avatarColor: data.target.avatar_color }
-        : null,
+ target: data.target
+  ? {
+      id: data.target.id,
+      username: data.target.username,
+      avatarColor: data.target.avatar_color,
+      isSuspended: !!data.target.is_suspended,
+    }
+  : null,
       message: data.message
         ? {
             id: data.message.id,
