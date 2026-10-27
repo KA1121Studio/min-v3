@@ -56,9 +56,11 @@ const signToken = (user) =>
 
 /* =====================================================
    最高管理者一覧
+   このように増やそう　⚠️追加するにはそのアカウントを登録している必要あります⚠️
+   ['K-tube-admin', 'K-tube-admin-2']
 ===================================================== */
 
-const PROTECTED_ADMIN_USERNAME = 'K-tube-admin';
+const PROTECTED_ADMIN_USERNAMES = new Set(['K-tube-admin']);
 
 /* =====================================================
    POST /api/signup
@@ -381,12 +383,12 @@ app.patch('/api/admin/users/:id', authRequired, adminRequired, async (req, res) 
     .maybeSingle();
   if (!target) return res.status(404).json({ error: 'ユーザーが見つかりません' });
 
-  if (target.username === PROTECTED_ADMIN_USERNAME) {
-    if (patch.is_admin === false)
-      return res.status(400).json({ error: `${PROTECTED_ADMIN_USERNAME} の管理者権限は外せません` });
-    if (patch.is_suspended === true)
-      return res.status(400).json({ error: `${PROTECTED_ADMIN_USERNAME} は停止できません` });
-  }
+if (PROTECTED_ADMIN_USERNAMES.has(target.username)) {
+  if (patch.is_admin === false)
+    return res.status(400).json({ error: `${target.username} の管理者権限は外せません` });
+  if (patch.is_suspended === true)
+    return res.status(400).json({ error: `${target.username} は停止できません` });
+}
 
   if (id === req.user.sub && patch.is_admin === false)
     return res.status(400).json({ error: '自分自身の管理者権限は外せません' });
@@ -419,7 +421,7 @@ app.get('/api/admin/admins', authRequired, adminRequired, async (req, res) => {
   return res.json({
     admins: (data || []).map((u) => ({
       ...u,
-      isProtected: u.username === PROTECTED_ADMIN_USERNAME,
+      isProtected: PROTECTED_ADMIN_USERNAMES.has(u.username),
     })),
   });
 });
@@ -437,8 +439,8 @@ app.delete('/api/admin/users/:id', authRequired, adminRequired, async (req, res)
     .maybeSingle();
   if (!target) return res.status(404).json({ error: 'ユーザーが見つかりません' });
 
-  if (target.username === PROTECTED_ADMIN_USERNAME)
-    return res.status(400).json({ error: `${PROTECTED_ADMIN_USERNAME} は削除できません` });
+if (PROTECTED_ADMIN_USERNAMES.has(target.username))
+  return res.status(400).json({ error: `${target.username} は削除できません` });
   if (id === req.user.sub)
     return res.status(400).json({ error: '自分自身は削除できません' });
 
