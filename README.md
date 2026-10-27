@@ -17,3 +17,6 @@ min3-chat/
     ├── style.css         # 付属HTMLのスタイルをそのまま移設
     └── app.js            # フロントロジック（API + Realtime）
 ```
+## 管理者についてはこちらをご覧ください
+
+- [管理者マニュアル](docs/admin-manual.md)
