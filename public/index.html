@@ -122,6 +122,18 @@
 
   <div class="room-list" id="roomList"></div>
 
+   <div class="section-label" style="margin-top:8px">システム</div>
+<div class="room-item" id="inquiryEntry">
+  <div class="room-ico" style="background:linear-gradient(135deg,#3a3f5c,#5a5f8c)">💬</div>
+  <div class="room-body">
+    <div class="room-name">お問い合わせ</div>
+    <div class="room-preview">管理者へのご質問はこちら</div>
+  </div>
+  <div class="room-side">
+    <span class="badge" id="inquiryBadge" style="display:none">0</span>
+  </div>
+</div>
+
 
   <!-- 下部：ユーザー情報＋操作 -->
   <div class="sidebar-foot">
@@ -195,6 +207,33 @@
   <div class="scrim" id="scrim"></div>
 </section>
 
+  <!-- 問い合わせチャット（一般ユーザー） -->
+<div class="inquiry-pane" id="inquiryPane">
+  <header class="chat-head">
+    <button class="icon-btn" id="inquiryBack">←</button>
+    <div class="room-ico" style="background:linear-gradient(135deg,#3a3f5c,#5a5f8c)">💬</div>
+    <div style="min-width:0">
+      <div class="chat-title">お問い合わせ</div>
+      <div class="chat-sub">管理者が対応します</div>
+    </div>
+  </header>
+
+  <div class="messages" id="inquiryMessages"></div>
+
+  <footer class="composer">
+    <div class="composer-row">
+      <div class="composer-box">
+        <textarea id="inquiryInput" rows="1" placeholder="メッセージを入力..." maxlength="800"></textarea>
+      </div>
+      <button class="send-btn" id="inquirySendBtn" disabled title="送信">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/>
+        </svg>
+      </button>
+    </div>
+  </footer>
+</div>
+
 <!-- ==================== 管理画面 ==================== -->
 <section id="adminScreen" class="screen">
   <div class="app-shell">
@@ -231,6 +270,12 @@
   </div>
   <div style="font-size:11px;color:var(--muted-2)">K-tube-admin は保護されています（削除・剥奪不可）</div>
 </div>
+
+          <div class="card">
+  <h3>📨 問い合わせ管理</h3>
+  <div id="adminInquiryList"></div>
+</div>
+      
       <div class="card">
         <h3>⚠️ 危険な操作</h3>
         <button class="btn danger" id="clearAll" style="width:100%">表示中メッセージをクリア</button>
@@ -362,7 +407,33 @@
 </div>
   </div>
 </div>
-
+  
+<div class="modal-backdrop" id="adminInquiryModal">
+  <div class="modal" style="width:min(640px,100%);height:min(80vh,720px);display:flex;flex-direction:column">
+    <div style="display:flex;align-items:center;gap:10px">
+      <h3 id="adminInquiryTitle" style="flex:1">問い合わせ</h3>
+      <select id="adminInquiryStatus" class="input" style="width:auto;padding:6px 10px">
+        <option value="open">未対応</option>
+        <option value="in_progress">対応中</option>
+        <option value="resolved">解決済み</option>
+      </select>
+      <button class="icon-btn" data-close="adminInquiryModal">✕</button>
+    </div>
+    <div class="messages" id="adminInquiryMessages" style="flex:1"></div>
+    <div class="composer" style="padding:8px 0 0;border-top:1px solid var(--border)">
+      <div class="composer-row">
+        <div class="composer-box">
+          <textarea id="adminInquiryInput" rows="1" placeholder="返信を入力..." maxlength="800"></textarea>
+        </div>
+        <button class="send-btn" id="adminInquirySendBtn" disabled title="送信">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
 
   <!-- モーダル: 汎用確認 -->
 <div class="modal-backdrop" id="confirmModal">
