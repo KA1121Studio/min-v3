@@ -320,3 +320,93 @@ create policy "reports_update_admin"
 -- =====================================================
 alter table public.profiles
   add column if not exists is_suspended boolean not null default false;
+
+-- =====================================================
+-- inquiries（問い合わせスレッド）
+-- =====================================================
+create table if not exists public.inquiries (
+  id                  uuid primary key default gen_random_uuid(),
+  user_id             uuid not null references public.profiles(id) on delete cascade,
+  status              text not null default 'open'
+                      check (status in ('open','in_progress','resolved')),
+  user_last_read_at   timestamptz not null default now(),
+  admin_last_read_at  timestamptz not null default now(),
+  created_at          timestamptz not null default now(),
+  updated_at          timestamptz not null default now(),
+  unique (user_id)
+);
+
+create index if not exists idx_inquiries_status
+  on public.inquiries (status, updated_at desc);
+
+-- =====================================================
+-- inquiry_messages（問い合わせメッセージ）
+-- =====================================================
+create table if not exists public.inquiry_messages (
+  id          uuid primary key default gen_random_uuid(),
+  inquiry_id  uuid not null references public.inquiries(id) on delete cascade,
+  sender_id   uuid not null references public.profiles(id) on delete cascade,
+  content     text not null check (char_length(content) between 1 and 800),
+  created_at  timestamptz not null default now()
+);
+
+create index if not exists idx_inquiry_messages_inquiry
+  on public.inquiry_messages (inquiry_id, created_at asc);
+
+alter publication supabase_realtime add table public.inquiry_messages;
+
+-- =====================================================
+-- RLS
+-- =====================================================
+alter table public.inquiries        enable row level security;
+alter table public.inquiry_messages enable row level security;
+
+-- inquiries: 本人 or 管理者が閲覧可
+create policy "inquiries_select"
+  on public.inquiries for select
+  using (
+    auth.uid() = user_id
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+-- inquiries: 本人のみ作成可
+create policy "inquiries_insert"
+  on public.inquiries for insert
+  with check (auth.uid() = user_id);
+
+-- inquiries: 本人 or 管理者が更新可
+create policy "inquiries_update"
+  on public.inquiries for update
+  using (
+    auth.uid() = user_id
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+-- inquiry_messages: スレッドの本人 or 管理者が閲覧可
+create policy "inquiry_messages_select"
+  on public.inquiry_messages for select
+  using (
+    exists (
+      select 1 from public.inquiries i
+      where i.id = inquiry_messages.inquiry_id
+        and (
+          i.user_id = auth.uid()
+          or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+        )
+    )
+  );
+
+-- inquiry_messages: スレッドの本人 or 管理者が送信可
+create policy "inquiry_messages_insert"
+  on public.inquiry_messages for insert
+  with check (
+    auth.uid() = sender_id
+    and exists (
+      select 1 from public.inquiries i
+      where i.id = inquiry_messages.inquiry_id
+        and (
+          i.user_id = auth.uid()
+          or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+        )
+    )
+  );
