@@ -1003,7 +1003,7 @@ function unsubscribeSuspension(){
     switchScreen('adminScreen');
   }
 
-  async function renderAdmin(){
+   async function renderAdmin(){
     // サマリー
     try {
       const s = await api('/api/admin/stats');
@@ -1142,10 +1142,9 @@ function unsubscribeSuspension(){
       el.adminAdminList.innerHTML = `<div class="table-row"><div class="grow">${e.message}</div></div>`;
     }
 
-    // 問い合わせ管理（最後に追加）
+    // 問い合わせ管理（最後）
     await renderAdminInquiries();
   }
-
     // 通報一覧
     el.adminReports.innerHTML = '<div class="table-row"><div class="grow">読み込み中...</div></div>';
     try {
