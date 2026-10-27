@@ -35,6 +35,8 @@
     onlineUsers: new Set(),
     reportTarget: null,
     currentReport: null,   // 通報詳細のデータ
+    inquiryChannel: null,
+    currentAdminInquiryId: null,
   };
 
   let currentReportId = null;
@@ -150,6 +152,22 @@
     confirmTitle: $('confirmTitle'),
     confirmMessage: $('confirmMessage'),
     confirmOkBtn: $('confirmOkBtn'),
+
+    inquiryEntry: $('inquiryEntry'),
+    inquiryBadge: $('inquiryBadge'),
+    inquiryPane: $('inquiryPane'),
+    inquiryBack: $('inquiryBack'),
+    inquiryMessages: $('inquiryMessages'),
+    inquiryInput: $('inquiryInput'),
+    inquirySendBtn: $('inquirySendBtn'),
+
+    adminInquiryList: $('adminInquiryList'),
+    adminInquiryModal: $('adminInquiryModal'),
+    adminInquiryTitle: $('adminInquiryTitle'),
+    adminInquiryStatus: $('adminInquiryStatus'),
+    adminInquiryMessages: $('adminInquiryMessages'),
+    adminInquiryInput: $('adminInquiryInput'),
+    adminInquirySendBtn: $('adminInquirySendBtn'),
     
   };
 
@@ -185,6 +203,37 @@
     renderAdmin();
   } catch (e) { showToast(e.message); }
 });
+
+  /* 問い合わせ（一般ユーザー） */
+el.inquiryEntry.addEventListener('click', openInquiryPane);
+el.inquiryBack.addEventListener('click', closeInquiryPane);
+el.inquiryInput.addEventListener('input', () => {
+  el.inquirySendBtn.disabled = !el.inquiryInput.value.trim();
+});
+el.inquiryInput.addEventListener('keydown', e => {
+  if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); sendInquiryMessage(); }
+});
+el.inquirySendBtn.addEventListener('click', sendInquiryMessage);
+
+/* 問い合わせ（管理者） */
+el.adminInquiryStatus.addEventListener('change', async () => {
+  const id = state.currentAdminInquiryId;
+  if(!id) return;
+  try {
+    await api(`/api/admin/inquiries/${id}`, {
+      method: 'PATCH', body: { status: el.adminInquiryStatus.value },
+    });
+    showToast('ステータスを更新しました');
+    renderAdminInquiries();
+  } catch (e) { showToast(e.message); }
+});
+el.adminInquiryInput.addEventListener('input', () => {
+  el.adminInquirySendBtn.disabled = !el.adminInquiryInput.value.trim();
+});
+el.adminInquiryInput.addEventListener('keydown', e => {
+  if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); sendAdminInquiryMessage(); }
+});
+el.adminInquirySendBtn.addEventListener('click', sendAdminInquiryMessage);
 
   /* =====================================================
      共通ユーティリティ
@@ -322,7 +371,8 @@ document.querySelectorAll('#confirmModal [data-close], #confirmModal').forEach(n
     refreshInvites();
     subscribePresence();
     subscribeSuspension(); 
-  }
+    refreshInquiryBadge(); 
+   }
 let suspensionChannel = null;
 function subscribeSuspension(){
   if(!sb || !state.me) return;
@@ -1026,6 +1076,9 @@ function unsubscribeSuspension(){
     } catch (e) {
       el.adminUserList.innerHTML = `<div class="table-row"><div class="grow">${e.message}</div></div>`;
     }
+        // 問い合わせ管理
+    await renderAdminInquiries();
+  }
 
     // 通報一覧
     el.adminReports.innerHTML = '<div class="table-row"><div class="grow">読み込み中...</div></div>';
@@ -1257,6 +1310,237 @@ el.reportDetailSuspend.textContent = r.target?.isSuspended ? '停止中' : '投�
       });
     } catch (e) { /* 未ログイン時など */ }
   }
+
+  /* =====================================================
+   問い合わせ（一般ユーザー）
+===================================================== */
+async function openInquiryPane(){
+  el.inquiryPane.classList.add('open');
+  await loadInquiryMessages();
+  subscribeInquiry();
+}
+
+function closeInquiryPane(){
+  el.inquiryPane.classList.remove('open');
+  unsubscribeInquiry();
+}
+
+async function loadInquiryMessages(){
+  try {
+    const { messages } = await api('/api/inquiries/me/messages');
+    renderInquiryMessages(messages);
+    await refreshInquiryBadge();
+  } catch (e) {
+    showToast(e.message);
+  }
+}
+
+function renderInquiryMessages(messages){
+  el.inquiryMessages.innerHTML = '';
+  if(!messages.length){
+    el.inquiryMessages.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted);font-size:13px">まだメッセージはありません。お気軽にご質問ください。</div>';
+    return;
+  }
+  messages.forEach(m => {
+    const wrap = document.createElement('div');
+    wrap.className = 'msg' + (m.mine ? ' self' : '');
+
+    const av = document.createElement('div');
+    av.className = 'avatar sm';
+    av.textContent = (m.senderName || '?').slice(0,2).toUpperCase();
+    av.style.background = colorOf(m.senderAvatarColor);
+
+    const col = document.createElement('div');
+    col.className = 'msg-col';
+
+    const meta = document.createElement('div');
+    meta.className = 'msg-meta';
+    const nm = document.createElement('span');
+    nm.className = 'name';
+    nm.textContent = m.senderName + (m.fromAdmin ? '（管理者）' : '');
+    const tm = document.createElement('span');
+    tm.textContent = timeStr(m.createdAt);
+    meta.append(nm, document.createTextNode('•'), tm);
+
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    bubble.textContent = m.content;
+
+    col.append(meta, bubble);
+    wrap.append(av, col);
+    el.inquiryMessages.appendChild(wrap);
+  });
+  el.inquiryMessages.scrollTop = el.inquiryMessages.scrollHeight;
+}
+
+async function refreshInquiryBadge(){
+  try {
+    const { unread } = await api('/api/inquiries/me');
+    if(unread > 0){
+      el.inquiryBadge.style.display = 'inline-flex';
+      el.inquiryBadge.textContent = String(unread);
+    } else {
+      el.inquiryBadge.style.display = 'none';
+    }
+  } catch {}
+}
+
+async function sendInquiryMessage(){
+  const content = el.inquiryInput.value.trim();
+  if(!content) return;
+  el.inquiryInput.value = '';
+  el.inquirySendBtn.disabled = true;
+  try {
+    await api('/api/inquiries/me/messages', {
+      method: 'POST', body: { content },
+    });
+    await loadInquiryMessages();
+  } catch (e) {
+    showToast(e.message);
+  }
+}
+
+function unsubscribeInquiry(){
+  if(state.inquiryChannel && sb){
+    sb.removeChannel(state.inquiryChannel);
+  }
+  state.inquiryChannel = null;
+}
+
+async function subscribeInquiry(){
+  unsubscribeInquiry();
+  if(!sb) return;
+
+  const { inquiry } = await api('/api/inquiries/me');
+  if(!inquiry) return;
+
+  state.inquiryChannel = sb
+    .channel(`inquiry:${inquiry.id}`)
+    .on('postgres_changes', {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'inquiry_messages',
+      filter: `inquiry_id=eq.${inquiry.id}`,
+    }, payload => {
+      // 自分の送信分は既に反映済み
+      if(payload.new.sender_id === state.me.id) return;
+      loadInquiryMessages();
+    })
+    .subscribe();
+}
+
+/* =====================================================
+   問い合わせ（管理者）
+===================================================== */
+async function renderAdminInquiries(){
+  el.adminInquiryList.innerHTML = '<div class="table-row"><div class="grow">読み込み中...</div></div>';
+  try {
+    const { inquiries } = await api('/api/admin/inquiries');
+    el.adminInquiryList.innerHTML = '';
+    if(!inquiries.length){
+      el.adminInquiryList.innerHTML = '<div class="table-row"><div class="grow">問い合わせはありません</div></div>';
+      return;
+    }
+    inquiries.forEach(i => {
+      const row = document.createElement('div');
+      row.className = 'table-row';
+      row.style.cursor = 'pointer';
+
+      const nm = document.createElement('div');
+      nm.className = 'grow';
+      nm.innerHTML = `<b>${i.username}</b><div style="font-size:11px;color:var(--muted)">${i.lastMessage?.content || '（メッセージなし）'}</div>`;
+
+      const st = document.createElement('span');
+      st.className = 'pill ' + (i.status === 'open' ? 'danger' : i.status === 'in_progress' ? 'warn' : 'ok');
+      st.textContent = i.status === 'open' ? '未対応' : i.status === 'in_progress' ? '対応中' : '解決済み';
+
+      row.append(nm, st);
+      if(i.unread > 0){
+        const b = document.createElement('span');
+        b.className = 'badge';
+        b.textContent = String(i.unread);
+        row.appendChild(b);
+      }
+
+      row.addEventListener('click', () => openAdminInquiry(i.id, i.username, i.status));
+      el.adminInquiryList.appendChild(row);
+    });
+  } catch (e) {
+    el.adminInquiryList.innerHTML = `<div class="table-row"><div class="grow">${e.message}</div></div>`;
+  }
+}
+
+async function openAdminInquiry(id, username, status){
+  state.currentAdminInquiryId = id;
+  el.adminInquiryTitle.textContent = `${username} さんとの問い合わせ`;
+  el.adminInquiryStatus.value = status;
+  el.adminInquiryMessages.innerHTML = '<div style="font-size:13px;color:var(--muted);padding:12px">読み込み中...</div>';
+  openModal('adminInquiryModal');
+
+  try {
+    const { messages } = await api(`/api/admin/inquiries/${id}/messages`);
+    renderAdminInquiryMessages(messages);
+  } catch (e) {
+    el.adminInquiryMessages.innerHTML = `<div style="font-size:13px;color:var(--danger);padding:12px">${e.message}</div>`;
+  }
+}
+
+function renderAdminInquiryMessages(messages){
+  el.adminInquiryMessages.innerHTML = '';
+  if(!messages.length){
+    el.adminInquiryMessages.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted);font-size:13px">メッセージはありません</div>';
+    return;
+  }
+  messages.forEach(m => {
+    const wrap = document.createElement('div');
+    wrap.className = 'msg' + (m.fromAdmin ? ' self' : '');
+
+    const av = document.createElement('div');
+    av.className = 'avatar sm';
+    av.textContent = (m.senderName || '?').slice(0,2).toUpperCase();
+    av.style.background = colorOf(m.senderAvatarColor);
+
+    const col = document.createElement('div');
+    col.className = 'msg-col';
+
+    const meta = document.createElement('div');
+    meta.className = 'msg-meta';
+    const nm = document.createElement('span');
+    nm.className = 'name';
+    nm.textContent = m.senderName + (m.fromAdmin ? '（管理者）' : '');
+    const tm = document.createElement('span');
+    tm.textContent = timeStr(m.createdAt);
+    meta.append(nm, document.createTextNode('•'), tm);
+
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    bubble.textContent = m.content;
+
+    col.append(meta, bubble);
+    wrap.append(av, col);
+    el.adminInquiryMessages.appendChild(wrap);
+  });
+  el.adminInquiryMessages.scrollTop = el.adminInquiryMessages.scrollHeight;
+}
+
+async function sendAdminInquiryMessage(){
+  const id = state.currentAdminInquiryId;
+  const content = el.adminInquiryInput.value.trim();
+  if(!id || !content) return;
+  el.adminInquiryInput.value = '';
+  el.adminInquirySendBtn.disabled = true;
+  try {
+    await api(`/api/admin/inquiries/${id}/messages`, {
+      method: 'POST', body: { content },
+    });
+    const { messages } = await api(`/api/admin/inquiries/${id}/messages`);
+    renderAdminInquiryMessages(messages);
+    el.adminInquiryStatus.value = 'in_progress';
+    renderAdminInquiries();
+  } catch (e) {
+    showToast(e.message);
+  }
+}
 
   /* =====================================================
      イベント登録
