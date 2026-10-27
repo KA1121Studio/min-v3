@@ -710,6 +710,273 @@ app.get('/api/rooms/:id/members', authRequired, async (req, res) => {
 });
 
 /* =====================================================
+   GET /api/inquiries/me
+   自分の問い合わせスレッドを取得（なければ作成）
+===================================================== */
+app.get('/api/inquiries/me', authRequired, async (req, res) => {
+  const uid = req.user.sub;
+
+  let { data: inquiry } = await supabase
+    .from('inquiries')
+    .select('id, status, user_last_read_at, admin_last_read_at, created_at, updated_at')
+    .eq('user_id', uid)
+    .maybeSingle();
+
+  if (!inquiry) {
+    const { data, error } = await supabase
+      .from('inquiries')
+      .insert({ user_id: uid })
+      .select('id, status, user_last_read_at, admin_last_read_at, created_at, updated_at')
+      .single();
+    if (error) return res.status(500).json({ error: '問い合わせの作成に失敗しました' });
+    inquiry = data;
+  }
+
+  // 未読件数（管理者からの返信で、user_last_read_atより新しいもの）
+  const { count } = await supabase
+    .from('inquiry_messages')
+    .select('*', { count: 'exact', head: true })
+    .eq('inquiry_id', inquiry.id)
+    .neq('sender_id', uid)
+    .gt('created_at', inquiry.user_last_read_at || '1970-01-01');
+
+  return res.json({ inquiry, unread: count || 0 });
+});
+
+/* =====================================================
+   GET /api/inquiries/me/messages
+===================================================== */
+app.get('/api/inquiries/me/messages', authRequired, async (req, res) => {
+  const uid = req.user.sub;
+
+  const { data: inquiry } = await supabase
+    .from('inquiries')
+    .select('id')
+    .eq('user_id', uid)
+    .maybeSingle();
+  if (!inquiry) return res.json({ messages: [] });
+
+  const { data, error } = await supabase
+    .from('inquiry_messages')
+    .select('id, content, created_at, sender_id, profiles:sender_id (username, avatar_color, is_admin)')
+    .eq('inquiry_id', inquiry.id)
+    .order('created_at', { ascending: true });
+
+  if (error) return res.status(500).json({ error: 'メッセージ取得に失敗しました' });
+
+  // 既読更新
+  await supabase.from('inquiries')
+    .update({ user_last_read_at: new Date().toISOString() })
+    .eq('id', inquiry.id);
+
+  return res.json({
+    messages: (data || []).map((m) => ({
+      id: m.id,
+      content: m.content,
+      createdAt: m.created_at,
+      senderName: m.profiles?.username || '?',
+      senderAvatarColor: m.profiles?.avatar_color ?? 0,
+      fromAdmin: !!m.profiles?.is_admin,
+      mine: m.sender_id === uid,
+    })),
+  });
+});
+
+/* =====================================================
+   POST /api/inquiries/me/messages
+   body: { content }
+===================================================== */
+app.post('/api/inquiries/me/messages', authRequired, async (req, res) => {
+  const uid = req.user.sub;
+  const { content } = req.body || {};
+  if (!content || content.length > 800)
+    return res.status(400).json({ error: 'メッセージは1〜800文字です' });
+
+  let { data: inquiry } = await supabase
+    .from('inquiries')
+    .select('id, status')
+    .eq('user_id', uid)
+    .maybeSingle();
+  if (!inquiry) {
+    const { data, error } = await supabase
+      .from('inquiries')
+      .insert({ user_id: uid })
+      .select('id, status')
+      .single();
+    if (error) return res.status(500).json({ error: '問い合わせの作成に失敗しました' });
+    inquiry = data;
+  }
+
+  const { data, error } = await supabase
+    .from('inquiry_messages')
+    .insert({ inquiry_id: inquiry.id, sender_id: uid, content })
+    .select('id, content, created_at, sender_id')
+    .single();
+  if (error) return res.status(500).json({ error: '送信に失敗しました' });
+
+  // ステータスをopenに戻し、updated_atを更新
+  await supabase.from('inquiries').update({
+    status: 'open',
+    updated_at: new Date().toISOString(),
+  }).eq('id', inquiry.id);
+
+  return res.json({
+    message: {
+      id: data.id,
+      content: data.content,
+      createdAt: data.created_at,
+      senderName: req.user.username,
+      fromAdmin: false,
+      mine: true,
+    },
+  });
+});
+
+/* =====================================================
+   GET /api/admin/inquiries
+   全ユーザーの問い合わせ一覧
+===================================================== */
+app.get('/api/admin/inquiries', authRequired, adminRequired, async (req, res) => {
+  const { data, error } = await supabase
+    .from('inquiries')
+    .select(`
+      id, user_id, status, created_at, updated_at, admin_last_read_at,
+      user:user_id (username, avatar_color)
+    `)
+    .order('updated_at', { ascending: false });
+
+  if (error) return res.status(500).json({ error: '問い合わせ取得に失敗しました' });
+
+  // 各スレッドの最新メッセージ + 未読件数
+  const enriched = await Promise.all((data || []).map(async (i) => {
+    const { data: last } = await supabase
+      .from('inquiry_messages')
+      .select('content, created_at, sender_id')
+      .eq('inquiry_id', i.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const { count } = await supabase
+      .from('inquiry_messages')
+      .select('*', { count: 'exact', head: true })
+      .eq('inquiry_id', i.id)
+      .neq('sender_id', req.user.sub)
+      .gt('created_at', i.admin_last_read_at || '1970-01-01');
+
+    return {
+      id: i.id,
+      userId: i.user_id,
+      username: i.user?.username || '?',
+      avatarColor: i.user?.avatar_color ?? 0,
+      status: i.status,
+      createdAt: i.created_at,
+      updatedAt: i.updated_at,
+      lastMessage: last ? { content: last.content, createdAt: last.created_at } : null,
+      unread: count || 0,
+    };
+  }));
+
+  return res.json({ inquiries: enriched });
+});
+
+/* =====================================================
+   GET /api/admin/inquiries/:id/messages
+===================================================== */
+app.get('/api/admin/inquiries/:id/messages', authRequired, adminRequired, async (req, res) => {
+  const id = req.params.id;
+
+  const { data: inquiry } = await supabase
+    .from('inquiries')
+    .select('id, user_id, status')
+    .eq('id', id)
+    .maybeSingle();
+  if (!inquiry) return res.status(404).json({ error: '問い合わせが見つかりません' });
+
+  const { data, error } = await supabase
+    .from('inquiry_messages')
+    .select('id, content, created_at, sender_id, profiles:sender_id (username, avatar_color, is_admin)')
+    .eq('inquiry_id', id)
+    .order('created_at', { ascending: true });
+
+  if (error) return res.status(500).json({ error: 'メッセージ取得に失敗しました' });
+
+  // 既読更新
+  await supabase.from('inquiries')
+    .update({ admin_last_read_at: new Date().toISOString() })
+    .eq('id', id);
+
+  return res.json({
+    inquiry: { id: inquiry.id, userId: inquiry.user_id, status: inquiry.status },
+    messages: (data || []).map((m) => ({
+      id: m.id,
+      content: m.content,
+      createdAt: m.created_at,
+      senderName: m.profiles?.username || '?',
+      senderAvatarColor: m.profiles?.avatar_color ?? 0,
+      fromAdmin: !!m.profiles?.is_admin,
+    })),
+  });
+});
+
+/* =====================================================
+   POST /api/admin/inquiries/:id/messages
+   body: { content }
+===================================================== */
+app.post('/api/admin/inquiries/:id/messages', authRequired, adminRequired, async (req, res) => {
+  const id = req.params.id;
+  const { content } = req.body || {};
+  if (!content || content.length > 800)
+    return res.status(400).json({ error: 'メッセージは1〜800文字です' });
+
+  const { data: inquiry } = await supabase
+    .from('inquiries')
+    .select('id, status')
+    .eq('id', id)
+    .maybeSingle();
+  if (!inquiry) return res.status(404).json({ error: '問い合わせが見つかりません' });
+
+  const { data, error } = await supabase
+    .from('inquiry_messages')
+    .insert({ inquiry_id: id, sender_id: req.user.sub, content })
+    .select('id, content, created_at, sender_id')
+    .single();
+  if (error) return res.status(500).json({ error: '送信に失敗しました' });
+
+  await supabase.from('inquiries').update({
+    status: inquiry.status === 'open' ? 'in_progress' : inquiry.status,
+    updated_at: new Date().toISOString(),
+  }).eq('id', id);
+
+  return res.json({
+    message: {
+      id: data.id,
+      content: data.content,
+      createdAt: data.created_at,
+      senderName: req.user.username,
+      fromAdmin: true,
+    },
+  });
+});
+
+/* =====================================================
+   PATCH /api/admin/inquiries/:id
+   body: { status }
+===================================================== */
+app.patch('/api/admin/inquiries/:id', authRequired, adminRequired, async (req, res) => {
+  const id = req.params.id;
+  const status = req.body?.status;
+  if (!['open','in_progress','resolved'].includes(status))
+    return res.status(400).json({ error: '不正なステータスです' });
+
+  const { error } = await supabase.from('inquiries')
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) return res.status(500).json({ error: '更新に失敗しました' });
+  return res.json({ ok: true });
+});
+
+/* =====================================================
    DELETE /api/rooms/:id/members/me
    自分をルームから退出させる
 ===================================================== */
