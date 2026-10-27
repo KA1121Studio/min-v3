@@ -60,7 +60,7 @@ const signToken = (user) =>
    ['K-tube-admin', 'K-tube-admin-2']
 ===================================================== */
 
-const PROTECTED_ADMIN_USERNAMES = new Set(['K-tube-admin']);
+const PROTECTED_ADMIN_USERNAMES = new Set('K-tube-admin', 'wl-admin');
 
 /* =====================================================
    POST /api/signup
