@@ -207,16 +207,19 @@
   <div class="scrim" id="scrim"></div>
 </section>
 
-  <!-- 問い合わせチャット（一般ユーザー） -->
-<div class="inquiry-pane" id="inquiryPane">
-  <header class="chat-head">
-    <button class="icon-btn" id="inquiryBack">←</button>
+<div class="room-list" id="roomList">
+  <div class="section-label" style="margin-top:8px">システム</div>
+  <div class="room-item" id="inquiryEntry">
     <div class="room-ico" style="background:linear-gradient(135deg,#3a3f5c,#5a5f8c)">💬</div>
-    <div style="min-width:0">
-      <div class="chat-title">お問い合わせ</div>
-      <div class="chat-sub">管理者が対応します</div>
+    <div class="room-body">
+      <div class="room-name">お問い合わせ</div>
+      <div class="room-preview">管理者へのご質問はこちら</div>
     </div>
-  </header>
+    <div class="room-side">
+      <span class="badge" id="inquiryBadge" style="display:none">0</span>
+    </div>
+  </div>
+</div>
 
   <div class="messages" id="inquiryMessages"></div>
 
@@ -268,7 +271,7 @@
     <input id="promoteUsername" class="input" placeholder="管理者にするユーザー名" style="flex:1" />
     <button class="btn primary" id="promoteBtn">追加</button>
   </div>
-  <div style="font-size:11px;color:var(--muted-2)">K-tube-admin は保護されています（削除・剥奪不可）</div>
+  <div style="font-size:11px;color:var(--muted-2)">  このアカウントは保護されています（削除・剥奪不可）</div>
 </div>
 
           <div class="card">
@@ -279,7 +282,7 @@
       <div class="card">
         <h3>⚠️ 危険な操作</h3>
         <button class="btn danger" id="clearAll" style="width:100%">表示中メッセージをクリア</button>
-        <div style="font-size:11px;color:var(--muted-2)">この操作は取り消せません（デモ）</div>
+        <div style="font-size:11px;color:var(--muted-2)">この操作は取り消せません</div>
       </div>
     </div>
   </div>
@@ -304,7 +307,7 @@
     </div>
     <div class="field">
       <label for="newRoomName">ルーム名</label>
-      <input id="newRoomName" class="input" maxlength="32" placeholder="例: 週末ゲーム部" />
+      <input id="newRoomName" class="input" maxlength="32" placeholder="例: 淫夢厨あつまれ！" />
     </div>
     <div class="field">
       <label for="newRoomDesc">説明（任意）</label>
