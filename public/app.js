@@ -153,8 +153,6 @@
     confirmMessage: $('confirmMessage'),
     confirmOkBtn: $('confirmOkBtn'),
 
-    inquiryEntry: $('inquiryEntry'),
-    inquiryBadge: $('inquiryBadge'),
     inquiryPane: $('inquiryPane'),
     inquiryBack: $('inquiryBack'),
     inquiryMessages: $('inquiryMessages'),
@@ -205,7 +203,6 @@
 });
 
   /* 問い合わせ（一般ユーザー） */
-el.inquiryEntry.addEventListener('click', openInquiryPane);
 el.inquiryBack.addEventListener('click', closeInquiryPane);
 el.inquiryInput.addEventListener('input', () => {
   el.inquirySendBtn.disabled = !el.inquiryInput.value.trim();
@@ -495,28 +492,51 @@ function unsubscribeSuspension(){
   }
 
   function renderRoomList(){
-    el.roomList.innerHTML = '';
-    const rooms = filteredRooms();
-    if(!rooms.length){
-      el.roomList.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted);font-size:13px">ルームがありません</div>';
-      return;
-    }
-    const groups = [
-      { key:'global', label:'全体' },
-      { key:'open', label:'オープンチャット' },
-      { key:'private', label:'プライベート' },
-    ];
-    groups.forEach(g => {
-      const list = rooms.filter(r => r.type === g.key);
-      if(!list.length) return;
-      const label = document.createElement('div');
-      label.className = 'section-label';
-      label.textContent = g.label;
-      el.roomList.appendChild(label);
-      list.forEach(r => el.roomList.appendChild(renderRoomItem(r)));
-    });
-  }
+  el.roomList.innerHTML = '';
+  const rooms = filteredRooms();
+  const groups = [
+    { key:'global', label:'全体' },
+    { key:'open', label:'オープンチャット' },
+    { key:'private', label:'プライベート' },
+  ];
+  groups.forEach(g => {
+    const list = rooms.filter(r => r.type === g.key);
+    if(!list.length) return;
+    const label = document.createElement('div');
+    label.className = 'section-label';
+    label.textContent = g.label;
+    el.roomList.appendChild(label);
+    list.forEach(r => el.roomList.appendChild(renderRoomItem(r)));
+  });
 
+  // システムセクション（常に最下部）
+  const sysLabel = document.createElement('div');
+  sysLabel.className = 'section-label';
+  sysLabel.style.marginTop = '8px';
+  sysLabel.textContent = 'システム';
+  el.roomList.appendChild(sysLabel);
+
+  const inquiry = document.createElement('div');
+  inquiry.className = 'room-item';
+  inquiry.id = 'inquiryEntry';
+  inquiry.innerHTML = `
+    <div class="room-ico" style="background:linear-gradient(135deg,#3a3f5c,#5a5f8c)">💬</div>
+    <div class="room-body">
+      <div class="room-name">お問い合わせ</div>
+      <div class="room-preview">管理者へのご質問はこちら</div>
+    </div>
+    <div class="room-side">
+      <span class="badge" id="inquiryBadge" style="display:none">0</span>
+    </div>
+  `;
+  inquiry.addEventListener('click', openInquiryPane);
+  el.roomList.appendChild(inquiry);
+
+  // バッジ要素の参照を更新
+  el.inquiryEntry = inquiry;
+  el.inquiryBadge = inquiry.querySelector('#inquiryBadge');
+}
+  
   function renderRoomItem(r){
     const item = document.createElement('div');
     item.className = 'room-item' + (r.id === state.activeRoomId ? ' active' : '');
@@ -1376,11 +1396,13 @@ function renderInquiryMessages(messages){
 async function refreshInquiryBadge(){
   try {
     const { unread } = await api('/api/inquiries/me');
+    const badge = el.inquiryBadge;
+    if(!badge) return;
     if(unread > 0){
-      el.inquiryBadge.style.display = 'inline-flex';
-      el.inquiryBadge.textContent = String(unread);
+      badge.style.display = 'inline-flex';
+      badge.textContent = String(unread);
     } else {
-      el.inquiryBadge.style.display = 'none';
+      badge.style.display = 'none';
     }
   } catch {}
 }
