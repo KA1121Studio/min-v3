@@ -1145,72 +1145,7 @@ function unsubscribeSuspension(){
     // 問い合わせ管理（最後）
     await renderAdminInquiries();
   }
-    // 通報一覧
-    el.adminReports.innerHTML = '<div class="table-row"><div class="grow">読み込み中...</div></div>';
-    try {
-      const { reports } = await api('/api/admin/reports');
-      el.adminReports.innerHTML = '';
-      if(!reports.length){
-        el.adminReports.innerHTML = '<div class="table-row"><div class="grow">通報はありません</div></div>';
-      } else {
-        reports.forEach(rp => {
-          const row = document.createElement('div');
-          row.className = 'table-row';
-          row.style.cursor = 'pointer';
-          const txt = document.createElement('div');
-          txt.className = 'grow';
-          txt.innerHTML = `<b>${rp.reporter?.username || '?'}</b> → <b>${rp.target?.username || '?'}</b><div style="font-size:11px;color:var(--muted)">${rp.reason}</div>`;
-          const st = document.createElement('span');
-          st.className = 'pill ' + (rp.status === 'open' ? 'danger' : 'ok');
-          st.textContent = rp.status === 'open' ? '要対応' : rp.status === 'resolved' ? '解決済み' : '却下';
-          row.append(txt, st);
-          row.addEventListener('click', () => openReportDetail(rp.id));
-          el.adminReports.appendChild(row);
-        });
-      }
-    } catch (e) {
-      el.adminReports.innerHTML = `<div class="table-row"><div class="grow">${e.message}</div></div>`;
-    }
-
-    // 管理者一覧
-    el.adminAdminList.innerHTML = '<div class="table-row"><div class="grow">読み込み中...</div></div>';
-    try {
-      const { admins } = await api('/api/admin/admins');
-      el.adminAdminList.innerHTML = '';
-      if(!admins.length){
-        el.adminAdminList.innerHTML = '<div class="table-row"><div class="grow">管理者がいません</div></div>';
-      } else {
-        admins.forEach(u => {
-          const row = document.createElement('div');
-          row.className = 'table-row';
-          const nm = document.createElement('div');
-          nm.className = 'grow';
-          nm.innerHTML = `<b>${u.username}</b>${u.isProtected ? ' 🔒' : ''}`;
-          const st = document.createElement('span');
-          st.className = 'pill ok';
-          st.textContent = '管理者';
-          const del = document.createElement('button');
-          del.className = 'btn ghost';
-          del.textContent = u.isProtected ? '保護中' : '剥奪';
-          del.disabled = u.isProtected;
-          del.addEventListener('click', async () => {
-            try {
-              await api(`/api/admin/users/${u.id}`, {
-                method: 'PATCH', body: { is_admin: false },
-              });
-              showToast(`${u.username} の管理者権限を剥奪しました`);
-              renderAdmin();
-            } catch (e) { showToast(e.message); }
-          });
-          row.append(nm, st, del);
-          el.adminAdminList.appendChild(row);
-        });
-      }
-    } catch (e) {
-      el.adminAdminList.innerHTML = `<div class="table-row"><div class="grow">${e.message}</div></div>`;
-    }
-  }
-
+   
 
   async function openReportDetail(reportId){
   currentReportId = reportId;
