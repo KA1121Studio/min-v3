@@ -470,3 +470,9 @@
   .scrim{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:15;display:none}
   .scrim.show{display:block}
   .hidden{display:none !important}
+
+.inquiry-pane{
+  position:absolute;inset:0;display:none;flex-direction:column;
+  background:var(--bg);z-index:10;
+}
+.inquiry-pane.open{display:flex}
