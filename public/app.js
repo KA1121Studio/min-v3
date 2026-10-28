@@ -37,6 +37,7 @@
     currentReport: null,   // 通報詳細のデータ
     inquiryChannel: null,
     currentAdminInquiryId: null,
+    adminInquiryChannel: null, 
   };
 
   let currentReportId = null;
@@ -443,6 +444,7 @@ function unsubscribeSuspension(){
     unsubscribeRoom();
     unsubscribePresence();
     unsubscribeSuspension();
+    unsubscribeAdminInquiry();   
     clearSession();
     state.rooms = [];
     state.activeRoomId = null;
@@ -1502,6 +1504,7 @@ async function openAdminInquiry(id, username, status){
   try {
     const { messages } = await api(`/api/admin/inquiries/${id}/messages`);
     renderAdminInquiryMessages(messages);
+    subscribeAdminInquiry(id);   // ← 追加
   } catch (e) {
     el.adminInquiryMessages.innerHTML = `<div style="font-size:13px;color:var(--danger);padding:12px">${e.message}</div>`;
   }
@@ -1565,6 +1568,50 @@ async function sendAdminInquiryMessage(){
 }
 
   /* =====================================================
+   問い合わせ（管理者）Realtime購読
+===================================================== */
+function unsubscribeAdminInquiry(){
+  if(state.adminInquiryChannel && sb){
+    sb.removeChannel(state.adminInquiryChannel);
+  }
+  state.adminInquiryChannel = null;
+}
+
+function subscribeAdminInquiry(inquiryId){
+  unsubscribeAdminInquiry();
+  if(!sb) return;
+
+  state.adminInquiryChannel = sb
+    .channel(`admin-inquiry:${inquiryId}`)
+    .on('postgres_changes', {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'inquiry_messages',
+      filter: `inquiry_id=eq.${inquiryId}`,
+    }, payload => {
+      // 自分（管理者）の送信分は既に反映済みなのでスキップ
+      if(payload.new.sender_id === state.me.id) return;
+      // 表示中の問い合わせのみ更新
+      if(state.currentAdminInquiryId !== inquiryId) return;
+
+      // 新着メッセージを取得して再描画
+      refreshAdminInquiryMessages(inquiryId);
+    })
+    .subscribe();
+}
+
+async function refreshAdminInquiryMessages(inquiryId){
+  try {
+    const { messages } = await api(`/api/admin/inquiries/${inquiryId}/messages`);
+    renderAdminInquiryMessages(messages);
+    // 一覧の未読バッジ・最新メッセージも更新
+    renderAdminInquiries();
+  } catch (e) {
+    // 静かに失敗（ネットワーク等）
+  }
+}
+
+  /* =====================================================
      イベント登録
   ===================================================== */
   buildAvatarPicker();
@@ -1619,9 +1666,17 @@ async function sendAdminInquiryMessage(){
   document.querySelectorAll('[data-close]').forEach(b => {
     b.addEventListener('click', () => closeModal(b.dataset.close));
   });
-  document.querySelectorAll('.modal-backdrop').forEach(mb => {
-    mb.addEventListener('click', e => { if(e.target === mb) mb.classList.remove('show'); });
+document.querySelectorAll('.modal-backdrop').forEach(mb => {
+  mb.addEventListener('click', e => {
+    if(e.target === mb){
+      mb.classList.remove('show');
+      if(mb.id === 'adminInquiryModal'){
+        state.currentAdminInquiryId = null;
+        unsubscribeAdminInquiry();
+      }
+    }
   });
+});
 
   el.composerInput.addEventListener('input', () => { updateSendState(); autoResize(); });
   el.composerInput.addEventListener('keydown', e => {
