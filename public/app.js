@@ -1739,16 +1739,15 @@ document.querySelectorAll('.modal-backdrop').forEach(mb => {
     openModal('invitesModal');
   });
 
-  el.inviteMemberBtn.addEventListener('click', () => {
-    const r = activeRoom();
-    if(!r) return;
-    if(r.type !== 'private'){ showToast('プライベートルームのみ招待できます'); return; }
-    el.inviteName.value = '';
-    setErr(el.inviteErr, '');
-    openModal('inviteModal');
-    setTimeout(() => el.inviteName.focus(), 50);
-  });
-
+// el.inviteMemberBtn.addEventListener('click', () => {
+//   const r = activeRoom();
+//   if(!r) return;
+//   if(r.type !== 'private'){ showToast('プライベートルームのみ招待できます'); return; }
+//   el.inviteName.value = '';
+//   setErr(el.inviteErr, '');
+//   openModal('inviteModal');
+//   setTimeout(() => el.inviteName.focus(), 50);
+// });
   el.inviteSendBtn.addEventListener('click', async () => {
     const r = activeRoom();
     const name = el.inviteName.value.trim();
