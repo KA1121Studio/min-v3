@@ -117,7 +117,7 @@
     <button class="chip active" data-filter="all">すべて</button>
     <button class="chip" data-filter="global">🌐 全体</button>
     <button class="chip" data-filter="open">👥 オープン</button>
-    <button class="chip" data-filter="private">🔒 プライベート</button>
+ <!-- <button class="chip" data-filter="private">🔒 プライベート</button> -->
   </div>
 
   <div class="room-list" id="roomList"></div>
@@ -284,11 +284,13 @@
         <span class="t">オープンチャット</span>
         <span class="d">誰でも参加できる公開ルーム。検索から見つけられます。</span>
       </button>
-      <button class="choice" data-type="private">
-        <span class="ico">🔒</span>
-        <span class="t">プライベート</span>
-        <span class="d">招待された人だけが参加できる非公開ルーム。</span>
-      </button>
+  <!--
+  <button class="choice" data-type="private">
+    <span class="ico">🔒</span>
+    <span class="t">プライベート</span>
+    <span class="d">招待された人だけが参加できる非公開ルーム。</span>
+  </button>
+  -->
     </div>
     <div class="field">
       <label for="newRoomName">ルーム名</label>
@@ -340,8 +342,7 @@
   <!-- モーダル: 招待 -->
 <div class="modal-backdrop" id="inviteModal">
   <div class="modal" style="width:min(420px,100%)">
-    <h3>メンバーを招待</h3>
-    <div class="modal-sub">ユーザー名を入力してください</div>
+ <!-- <button class="btn" id="inviteMemberBtn" style="width:100%;margin-bottom:8px">メンバーを招待</button> -->
     <div class="field">
       <label for="inviteName">ユーザー名</label>
       <input id="inviteName" class="input" placeholder="例: 田所浩二" />
