@@ -499,7 +499,7 @@ function unsubscribeSuspension(){
   const groups = [
     { key:'global', label:'全体' },
     { key:'open', label:'オープンチャット' },
-    { key:'private', label:'プライベート' },
+    // { key:'private', label:'プライベート' },
   ];
   groups.forEach(g => {
     const list = rooms.filter(r => r.type === g.key);
